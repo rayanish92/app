@@ -1,0 +1,97 @@
+{
+  "theme": "light",
+  "archetype": "Organic & Earthy",
+  "description": "A grounded, tactile agricultural utility dashboard focused on clarity, natural aesthetics, and dense data tracking. Avoids typical 'SaaS Blue' in favor of deep forest greens, terracotta, and warm bone-whites.",
+  "typography": {
+    "heading_font": "Work Sans",
+    "body_font": "Manrope",
+    "rules": {
+      "h1": "text-4xl sm:text-5xl lg:text-6xl tracking-tight font-light",
+      "h2": "text-2xl sm:text-3xl lg:text-4xl tracking-tight",
+      "h3": "text-xl sm:text-2xl",
+      "h4": "text-lg sm:text-xl",
+      "body": "text-base leading-relaxed",
+      "labels": "text-xs uppercase tracking-[0.2em]",
+      "banned_fonts": ["Inter", "Roboto", "Open Sans", "Lato", "Syne", "Space Grotesk"]
+    }
+  },
+  "colors": {
+    "background": "#F9F8F6",
+    "foreground": "#2A2F2C",
+    "primary": "#1E3F33",
+    "primary_foreground": "#FFFFFF",
+    "secondary": "#E8E5DF",
+    "secondary_foreground": "#1E3F33",
+    "accent": "#DDA15E",
+    "accent_foreground": "#FFFFFF",
+    "destructive": "#C45A49",
+    "destructive_foreground": "#FFFFFF",
+    "border": "#E5E2DC",
+    "input": "#E5E2DC",
+    "muted": "#F0EFEB",
+    "muted_foreground": "#68706B",
+    "card": "#FFFFFF",
+    "card_foreground": "#2A2F2C",
+    "ring": "#1E3F33",
+    "rules": {
+      "note": "Use 'Tinted Grey' rule. Never pure black or #808080. All greys must be tinted with warm sand or sage."
+    }
+  },
+  "layout": {
+    "spacing_scale": ["p-4", "p-6", "p-8", "p-12", "p-16"],
+    "grid_strategy": "THE CONTROL ROOM GRID",
+    "rules": [
+      "Base Grid: grid-cols-1 md:grid-cols-3 lg:grid-cols-4",
+      "Gap: Tight (gap-4 or gap-6)",
+      "Card Style: Flat background, 1px subtle border, max 8px border-radius, NO soft drop-shadows. Use 'Neumorphism: Clay & Crisp' strictly where needed.",
+      "Grid Borders (Technical Look): Container with border-collapse, items with right and bottom borders for data-heavy sections."
+    ]
+  },
+  "components": {
+    "strategy": "Shadcn components heavily customized. Flat, rectangular, dense styles. AVOID excessive rounded cards.",
+    "buttons": "Primary buttons: bg-primary text-primary-foreground hover:bg-[#152B23]. Use sharp edges or max rounded-md.",
+    "cards": "Cardless or Grid Borders style. No massive floating cards. Keep it grounded.",
+    "tables": "Dense rows. Header text uppercase tracking-wider text-xs. Left-aligned data. Subtle bottom borders.",
+    "navigation": "Solid background (white) header with 1px bottom border. z-50.",
+    "forms": "Use Shadcn Input/Select. Borders must be crisp 1px solid border."
+  },
+  "icons": {
+    "library": "@phosphor-icons/react",
+    "style": "Duotone or Regular weight, consistent across app. Installation: yarn add @phosphor-icons/react"
+  },
+  "images": {
+    "rules": "Never use placeholders. Use provided URLs for login backgrounds, empty states, or visual accents.",
+    "login_hero": {
+      "url": "https://static.prod-images.emergentagent.com/jobs/14376f48-fa31-4bf5-ad69-ba6fe8d71be6/images/7b13abe1f39ed6bb96e0b8703d8af17acbac7bb2c9a261eff0d26ddfff617d0a.png",
+      "description": "High-quality generated agricultural/irrigation visual for the login hero section. Overlay with bg-black/30 max if text is placed on top."
+    },
+    "placeholders": [
+      {
+        "category": "Agricultural Background 1",
+        "url": "https://images.unsplash.com/photo-1768203541195-8b89499f3084?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2NzV8MHwxfHNlYXJjaHwyfHxhZ3JpY3VsdHVyYWwlMjBpcnJpZ2F0aW9uJTIwZmllbGRzfGVufDB8fHx8MTc3NTQ5NjY5MHww&ixlib=rb-4.1.0&q=85"
+      },
+      {
+        "category": "Agricultural Background 2",
+        "url": "https://images.unsplash.com/photo-1768984418592-5b54e4fe7af5?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2NzV8MHwxfHNlYXJjaHwxfHxhZ3JpY3VsdHVyYWwlMjBpcnJpZ2F0aW9uJTIwZmllbGRzfGVufDB8fHx8MTc3NTQ5NjY5MHww&ixlib=rb-4.1.0&q=85"
+      }
+    ]
+  },
+  "motion": {
+    "strategy": "Minimalist. Hover states translate-y-px. Focus rings 2px primary with 2px offset.",
+    "rules": [
+      "Hover text must explicitly change color or contrast.",
+      "Respect prefers-reduced-motion."
+    ]
+  },
+  "testing": {
+    "rules": "All interactive elements MUST have data-testid attributes (kebab-case, role-based)."
+  },
+  "instructions_to_main_agent": [
+    "1. IMPLEMENT UI using React + Tailwind + Shadcn/UI primitives. Convert the HEX colors above into HSL format in /app/frontend/src/index.css.",
+    "2. INSTALL fonts 'Work Sans' and 'Manrope' via Google Fonts in index.css, and configure them in tailwind.config.js.",
+    "3. INSTALL @phosphor-icons/react for iconography.",
+    "4. BUILD the following core screens: Login Screen (using login_hero image), Admin Dashboard (KPIs, active vs pending dues), Consumer Management (Add/Delete/List), Billing/Rate Configuration (Bigha/Katha calc), Payment Entry & History, SMS Notification dispatch.",
+    "5. NO PLACEHOLDER IMAGES. Use the URLs provided in this file.",
+    "6. ADD data-testid to all buttons, inputs, and functional elements."
+  ]
+}
