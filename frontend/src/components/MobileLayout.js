@@ -56,7 +56,7 @@ const MobileLayout = () => {
       </main>
 
       {/* Bottom Navigation */}
-      <nav className="fixed bottom-0 left-0 right-0 bg-card border-t border-border z-50 safe-area-inset-bottom" data-testid="bottom-nav">
+      <nav className="fixed bottom-0 left-0 right-0 bg-card border-t border-border safe-area-inset-bottom" style={{ zIndex: 99999 }} data-testid="bottom-nav">
         <div className="grid grid-cols-5 h-16">
           {navItems.map((item) => {
             const Icon = item.icon;
