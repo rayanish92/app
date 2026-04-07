@@ -11,7 +11,6 @@ from datetime import datetime, timezone, timedelta
 import bcrypt
 import jwt
 from bson import ObjectId
-from twilio.rest import Client as TwilioClient
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -25,10 +24,8 @@ db = client[os.environ['DB_NAME']]
 JWT_SECRET = os.environ.get('JWT_SECRET', 'your-secret-key-change-this')
 JWT_ALGORITHM = 'HS256'
 
-# Twilio Config (optional)
-TWILIO_ACCOUNT_SID = os.environ.get('TWILIO_ACCOUNT_SID', '')
-TWILIO_AUTH_TOKEN = os.environ.get('TWILIO_AUTH_TOKEN', '')
-TWILIO_PHONE_NUMBER = os.environ.get('TWILIO_PHONE_NUMBER', '')
+# Fast2SMS Config (optional)
+FAST2SMS_API_KEY = os.environ.get('FAST2SMS_API_KEY', '')
 
 app = FastAPI()
 api_router = APIRouter(prefix="/api")
@@ -387,21 +384,46 @@ async def send_sms(sms: SMSRequest, current_user: dict = Depends(get_current_use
     if not consumer:
         raise HTTPException(status_code=404, detail='Consumer not found')
     
-    if not TWILIO_ACCOUNT_SID or not TWILIO_AUTH_TOKEN or not TWILIO_PHONE_NUMBER:
+    # Fast2SMS Integration
+    fast2sms_api_key = os.environ.get('FAST2SMS_API_KEY', '')
+    
+    if not fast2sms_api_key:
         # Log SMS instead of sending (for demo)
         logging.info(f"SMS to {consumer['phone']}: {sms.message}")
-        return {'message': 'SMS logged (Twilio not configured)', 'phone': consumer['phone'], 'text': sms.message}
+        return {'message': 'SMS logged (Fast2SMS not configured)', 'phone': consumer['phone'], 'text': sms.message}
     
     try:
-        twilio_client = TwilioClient(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
-        message = twilio_client.messages.create(
-            body=sms.message,
-            from_=TWILIO_PHONE_NUMBER,
-            to=consumer['phone']
-        )
-        return {'message': 'SMS sent successfully', 'sid': message.sid}
-    except Exception as e:
-        logging.error(f"SMS error: {str(e)}")
+        import requests
+        
+        # Fast2SMS API endpoint
+        url = "https://www.fast2sms.com/dev/bulkV2"
+        
+        # Prepare payload
+        payload = {
+            'sender_id': 'FSTSMS',
+            'message': sms.message,
+            'language': 'english',
+            'route': 'q',  # Quick transactional route
+            'numbers': consumer['phone']
+        }
+        
+        headers = {
+            'authorization': fast2sms_api_key,
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'Cache-Control': 'no-cache'
+        }
+        
+        # Send SMS
+        response = requests.post(url, data=payload, headers=headers, timeout=30)
+        response.raise_for_status()
+        
+        result = response.json()
+        logging.info(f"Fast2SMS response: {result}")
+        
+        return {'message': 'SMS sent successfully via Fast2SMS', 'response': result}
+        
+    except requests.exceptions.RequestException as e:
+        logging.error(f"Fast2SMS error: {str(e)}")
         raise HTTPException(status_code=500, detail=f'Failed to send SMS: {str(e)}')
 
 # Dashboard stats

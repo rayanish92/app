@@ -163,10 +163,24 @@ const SMS = () => {
       </div>
 
       <div className="bg-muted border border-border p-4 rounded-xl">
-        <h3 className="font-heading text-base font-light mb-2">📱 SMS Info</h3>
-        <p className="text-xs text-muted-foreground">
-          SMS uses Twilio. Add credentials to backend .env to enable actual sending. Without credentials, messages are logged to console.
+        <h3 className="font-heading text-base font-light mb-2">📱 SMS Setup</h3>
+        <p className="text-xs text-muted-foreground mb-3">
+          This app uses <strong>Fast2SMS</strong> - a free SMS service for India.
         </p>
+        <div className="space-y-2">
+          <div>
+            <p className="text-xs font-medium">To enable SMS:</p>
+            <ol className="text-xs text-muted-foreground ml-4 mt-1 space-y-1">
+              <li>1. Visit <a href="https://www.fast2sms.com" target="_blank" rel="noopener noreferrer" className="text-primary underline">fast2sms.com</a></li>
+              <li>2. Create free account (get free credits)</li>
+              <li>3. Copy your API key from Dev API section</li>
+              <li>4. Add <code className="bg-background px-1 rounded">FAST2SMS_API_KEY</code> to backend .env</li>
+            </ol>
+          </div>
+          <div className="text-xs text-muted-foreground">
+            <strong>Note:</strong> Without API key, messages are logged to console for testing.
+          </div>
+        </div>
       </div>
     </div>
   );
