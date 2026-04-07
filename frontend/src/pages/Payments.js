@@ -5,7 +5,7 @@ import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '../components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
-import { Plus } from '@phosphor-icons/react';
+import { Plus, Calendar } from '@phosphor-icons/react';
 import { toast } from 'sonner';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
@@ -47,10 +47,10 @@ const Payments = () => {
       await axios.post(`${API_URL}/api/payments`, formData, {
         withCredentials: true
       });
-      toast.success('Payment recorded successfully');
+      toast.success('Payment recorded');
       setDialogOpen(false);
       resetForm();
-      fetchData();
+      await fetchData();
     } catch (error) {
       const msg = error.response?.data?.detail || 'Failed to record payment';
       toast.error(msg);
@@ -73,13 +73,13 @@ const Payments = () => {
   }
 
   return (
-    <div className="space-y-6" data-testid="payments-page">
+    <div className="space-y-4" data-testid="payments-page">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="font-heading text-4xl sm:text-5xl font-light tracking-tight text-foreground">
+          <h1 className="font-heading text-3xl font-light tracking-tight text-foreground">
             Payments
           </h1>
-          <p className="mt-2 text-muted-foreground">{payments.length} total payments</p>
+          <p className="mt-1 text-sm text-muted-foreground">{payments.length} total</p>
         </div>
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
           <DialogTrigger asChild>
@@ -88,44 +88,43 @@ const Payments = () => {
                 resetForm();
                 setDialogOpen(true);
               }}
-              className="bg-primary hover:bg-[#152B23] text-primary-foreground"
+              className="bg-primary hover:bg-[#152B23] text-primary-foreground h-10 w-10 p-0 rounded-full"
               data-testid="add-payment-button"
             >
-              <Plus size={20} weight="bold" className="mr-2" />
-              Record Payment
+              <Plus size={24} weight="bold" />
             </Button>
           </DialogTrigger>
-          <DialogContent data-testid="payment-dialog">
+          <DialogContent className="max-w-[90vw] rounded-xl" data-testid="payment-dialog">
             <DialogHeader>
-              <DialogTitle className="font-heading text-2xl font-light">Record Payment</DialogTitle>
+              <DialogTitle className="font-heading text-xl font-light">Record Payment</DialogTitle>
             </DialogHeader>
-            <form onSubmit={handleSubmit} className="space-y-4">
+            <form onSubmit={handleSubmit} className="space-y-3">
               <div>
-                <Label htmlFor="bill" className="text-xs uppercase tracking-[0.2em]">Bill</Label>
+                <Label htmlFor="bill" className="text-xs uppercase tracking-wider">Bill</Label>
                 <Select
                   value={formData.bill_id}
                   onValueChange={(value) => setFormData({ ...formData, bill_id: value })}
                   required
                 >
-                  <SelectTrigger data-testid="payment-bill-select">
+                  <SelectTrigger className="h-11" data-testid="payment-bill-select">
                     <SelectValue placeholder="Select bill" />
                   </SelectTrigger>
                   <SelectContent>
                     {bills.map((b) => (
                       <SelectItem key={b.id} value={b.id}>
-                        {b.consumer_name} - {b.billing_period} (Due: ₹{b.due.toFixed(2)})
+                        {b.consumer_name} - ₹{b.due.toFixed(0)}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
                 {selectedBill && (
                   <p className="text-xs text-muted-foreground mt-1">
-                    Outstanding due: ₹{selectedBill.due.toFixed(2)}
+                    Due: ₹{selectedBill.due.toFixed(0)}
                   </p>
                 )}
               </div>
               <div>
-                <Label htmlFor="amount" className="text-xs uppercase tracking-[0.2em]">Amount</Label>
+                <Label htmlFor="amount" className="text-xs uppercase tracking-wider">Amount</Label>
                 <Input
                   id="amount"
                   type="number"
@@ -133,16 +132,17 @@ const Payments = () => {
                   value={formData.amount}
                   onChange={(e) => setFormData({ ...formData, amount: parseFloat(e.target.value) || 0 })}
                   required
+                  className="h-11"
                   data-testid="payment-amount-input"
                 />
               </div>
               <div>
-                <Label htmlFor="method" className="text-xs uppercase tracking-[0.2em]">Payment Method</Label>
+                <Label htmlFor="method" className="text-xs uppercase tracking-wider">Method</Label>
                 <Select
                   value={formData.payment_method}
                   onValueChange={(value) => setFormData({ ...formData, payment_method: value })}
                 >
-                  <SelectTrigger data-testid="payment-method-select">
+                  <SelectTrigger className="h-11" data-testid="payment-method-select">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -154,16 +154,17 @@ const Payments = () => {
                 </Select>
               </div>
               <div>
-                <Label htmlFor="notes" className="text-xs uppercase tracking-[0.2em]">Notes (Optional)</Label>
+                <Label htmlFor="notes" className="text-xs uppercase tracking-wider">Notes</Label>
                 <Input
                   id="notes"
                   value={formData.notes}
                   onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                  placeholder="Add any additional notes"
+                  placeholder="Optional"
+                  className="h-11"
                   data-testid="payment-notes-input"
                 />
               </div>
-              <div className="flex gap-2 pt-4">
+              <div className="flex gap-2 pt-2">
                 <Button
                   type="button"
                   variant="outline"
@@ -171,12 +172,12 @@ const Payments = () => {
                     setDialogOpen(false);
                     resetForm();
                   }}
-                  className="flex-1"
+                  className="flex-1 h-11"
                 >
                   Cancel
                 </Button>
-                <Button type="submit" className="flex-1 bg-primary hover:bg-[#152B23]" data-testid="payment-submit-button">
-                  Record Payment
+                <Button type="submit" className="flex-1 h-11 bg-primary hover:bg-[#152B23]" data-testid="payment-submit-button">
+                  Record
                 </Button>
               </div>
             </form>
@@ -185,33 +186,41 @@ const Payments = () => {
       </div>
 
       {payments.length === 0 ? (
-        <div className="text-center py-12 bg-card border border-border rounded-md">
-          <p className="text-muted-foreground">No payments yet. Record your first payment to get started.</p>
+        <div className="text-center py-12 bg-card border border-border rounded-xl">
+          <p className="text-muted-foreground text-sm">No payments yet</p>
         </div>
       ) : (
-        <div className="bg-card border border-border rounded-md overflow-hidden">
-          <table className="w-full" data-testid="payments-table">
-            <thead className="bg-muted border-b border-border">
-              <tr>
-                <th className="text-left p-4 text-xs uppercase tracking-[0.2em] text-muted-foreground font-normal">Date</th>
-                <th className="text-left p-4 text-xs uppercase tracking-[0.2em] text-muted-foreground font-normal">Consumer</th>
-                <th className="text-left p-4 text-xs uppercase tracking-[0.2em] text-muted-foreground font-normal">Amount</th>
-                <th className="text-left p-4 text-xs uppercase tracking-[0.2em] text-muted-foreground font-normal">Method</th>
-                <th className="text-left p-4 text-xs uppercase tracking-[0.2em] text-muted-foreground font-normal">Notes</th>
-              </tr>
-            </thead>
-            <tbody>
-              {payments.map((payment, idx) => (
-                <tr key={payment.id} className="border-b border-border last:border-0" data-testid={`payment-row-${idx}`}>
-                  <td className="p-4">{new Date(payment.created_at).toLocaleDateString()}</td>
-                  <td className="p-4">{payment.consumer_name}</td>
-                  <td className="p-4 text-green-600">₹{payment.amount.toFixed(2)}</td>
-                  <td className="p-4 capitalize">{payment.payment_method.replace('_', ' ')}</td>
-                  <td className="p-4 text-muted-foreground">{payment.notes || '-'}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="space-y-3">
+          {payments.map((payment, idx) => (
+            <div
+              key={payment.id}
+              className="bg-card border border-border p-4 rounded-xl"
+              data-testid={`payment-row-${idx}`}
+            >
+              <div className="flex items-start justify-between mb-3">
+                <div className="flex-1">
+                  <h3 className="font-heading text-lg font-light">{payment.consumer_name}</h3>
+                  <div className="flex items-center gap-1 text-sm text-muted-foreground mt-1">
+                    <Calendar size={14} />
+                    <span>{new Date(payment.created_at).toLocaleDateString()}</span>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <p className="text-lg font-heading font-light text-green-600">₹{payment.amount.toFixed(0)}</p>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3 pt-3 border-t border-border">
+                <div>
+                  <p className="text-xs text-muted-foreground">Method</p>
+                  <p className="font-medium capitalize">{payment.payment_method.replace('_', ' ')}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Notes</p>
+                  <p className="font-medium text-sm">{payment.notes || '-'}</p>
+                </div>
+              </div>
+            </div>
+          ))}
         </div>
       )}
     </div>

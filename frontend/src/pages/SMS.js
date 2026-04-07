@@ -4,7 +4,7 @@ import { Button } from '../components/ui/button';
 import { Label } from '../components/ui/label';
 import { Textarea } from '../components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
-import { PaperPlaneTilt } from '@phosphor-icons/react';
+import { PaperPlaneTilt, User, Phone } from '@phosphor-icons/react';
 import { toast } from 'sonner';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
@@ -53,18 +53,18 @@ const SMS = () => {
 
   const selectedConsumer = consumers.find(c => c.id === formData.consumer_id);
 
-  const quickMessages = [
+  const templates = [
     {
       label: 'Payment Reminder',
-      text: `Dear [Consumer], Your water bill payment of ₹[Amount] is due. Please pay at your earliest convenience. Thank you!`
+      text: (consumer) => `Dear ${consumer?.name || '[Consumer]'}, your water bill payment of ₹${consumer?.total_due.toFixed(0) || '[Amount]'} is due. Please pay at your earliest convenience. Thank you!`
     },
     {
       label: 'Payment Received',
-      text: `Dear [Consumer], We have received your payment of ₹[Amount]. Thank you for your prompt payment!`
+      text: (consumer) => `Dear ${consumer?.name || '[Consumer]'}, we have received your payment. Thank you for your prompt payment!`
     },
     {
       label: 'Bill Generated',
-      text: `Dear [Consumer], Your water bill for this period has been generated. Total amount: ₹[Amount]. Please pay by [Date].`
+      text: (consumer) => `Dear ${consumer?.name || '[Consumer]'}, your water bill has been generated. Total amount: ₹${consumer?.total_due.toFixed(0) || '[Amount]'}. Please pay soon.`
     }
   ];
 
@@ -73,110 +73,100 @@ const SMS = () => {
   }
 
   return (
-    <div className="space-y-6" data-testid="sms-page">
+    <div className="space-y-4" data-testid="sms-page">
       <div>
-        <h1 className="font-heading text-4xl sm:text-5xl font-light tracking-tight text-foreground">
+        <h1 className="font-heading text-3xl font-light tracking-tight text-foreground">
           Send SMS
         </h1>
-        <p className="mt-2 text-muted-foreground">Send notifications to consumers</p>
+        <p className="mt-1 text-sm text-muted-foreground">Send notifications to consumers</p>
       </div>
 
-      <div className="grid md:grid-cols-2 gap-6">
-        <div className="bg-card border border-border p-6 rounded-md">
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-              <Label htmlFor="consumer" className="text-xs uppercase tracking-[0.2em]">Select Consumer</Label>
-              <Select
-                value={formData.consumer_id}
-                onValueChange={(value) => setFormData({ ...formData, consumer_id: value })}
-                required
-              >
-                <SelectTrigger data-testid="sms-consumer-select">
-                  <SelectValue placeholder="Select consumer" />
-                </SelectTrigger>
-                <SelectContent>
-                  {consumers.map((c) => (
-                    <SelectItem key={c.id} value={c.id}>
-                      {c.name} - {c.phone}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {selectedConsumer && (
-                <p className="text-xs text-muted-foreground mt-1">
-                  Phone: {selectedConsumer.phone} | Due: ₹{selectedConsumer.total_due.toFixed(2)}
-                </p>
-              )}
-            </div>
-
-            <div>
-              <Label htmlFor="message" className="text-xs uppercase tracking-[0.2em]">Message</Label>
-              <Textarea
-                id="message"
-                value={formData.message}
-                onChange={(e) => setFormData({ ...formData, message: e.target.value })}
-                required
-                rows={6}
-                placeholder="Type your message here..."
-                className="resize-none"
-                data-testid="sms-message-input"
-              />
-              <p className="text-xs text-muted-foreground mt-1">
-                {formData.message.length} characters
-              </p>
-            </div>
-
-            <Button
-              type="submit"
-              disabled={sending}
-              className="w-full bg-primary hover:bg-[#152B23] text-primary-foreground"
-              data-testid="sms-send-button"
-            >
-              <PaperPlaneTilt size={20} weight="bold" className="mr-2" />
-              {sending ? 'Sending...' : 'Send SMS'}
-            </Button>
-          </form>
-        </div>
-
-        <div className="space-y-4">
-          <div className="bg-card border border-border p-6 rounded-md">
-            <h3 className="font-heading text-lg font-light mb-4">Quick Templates</h3>
-            <div className="space-y-2">
-              {quickMessages.map((template, idx) => (
-                <Button
-                  key={idx}
-                  variant="outline"
-                  className="w-full justify-start text-left h-auto py-3"
-                  onClick={() => setFormData({ ...formData, message: template.text })}
-                  data-testid={`sms-template-${idx}`}
-                >
-                  <div>
-                    <div className="font-medium text-sm">{template.label}</div>
-                    <div className="text-xs text-muted-foreground mt-1 line-clamp-2">
-                      {template.text}
-                    </div>
-                  </div>
-                </Button>
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <div className="bg-card border border-border p-4 rounded-xl">
+          <Label htmlFor="consumer" className="text-xs uppercase tracking-wider mb-2 block">Select Consumer</Label>
+          <Select
+            value={formData.consumer_id}
+            onValueChange={(value) => setFormData({ ...formData, consumer_id: value })}
+            required
+          >
+            <SelectTrigger className="h-11" data-testid="sms-consumer-select">
+              <SelectValue placeholder="Choose consumer" />
+            </SelectTrigger>
+            <SelectContent>
+              {consumers.map((c) => (
+                <SelectItem key={c.id} value={c.id}>
+                  {c.name}
+                </SelectItem>
               ))}
+            </SelectContent>
+          </Select>
+          {selectedConsumer && (
+            <div className="mt-3 p-3 bg-muted rounded-lg">
+              <div className="flex items-center gap-2 text-sm">
+                <Phone size={14} className="text-muted-foreground" />
+                <span className="text-muted-foreground">{selectedConsumer.phone}</span>
+              </div>
+              <div className="text-sm mt-1">
+                <span className="text-muted-foreground">Due: </span>
+                <span className="font-medium text-destructive">₹{selectedConsumer.total_due.toFixed(0)}</span>
+              </div>
             </div>
-          </div>
-
-          <div className="bg-muted border border-border p-6 rounded-md">
-            <h3 className="font-heading text-lg font-light mb-2">SMS Configuration</h3>
-            <p className="text-sm text-muted-foreground">
-              SMS functionality uses Twilio. To enable actual SMS sending, add your Twilio credentials
-              to the backend .env file:
-            </p>
-            <ul className="text-xs text-muted-foreground mt-3 space-y-1">
-              <li>• TWILIO_ACCOUNT_SID</li>
-              <li>• TWILIO_AUTH_TOKEN</li>
-              <li>• TWILIO_PHONE_NUMBER</li>
-            </ul>
-            <p className="text-xs text-muted-foreground mt-3">
-              Without credentials, SMS messages will be logged to the backend console.
-            </p>
-          </div>
+          )}
         </div>
+
+        <div className="bg-card border border-border p-4 rounded-xl">
+          <Label htmlFor="message" className="text-xs uppercase tracking-wider mb-2 block">Message</Label>
+          <Textarea
+            id="message"
+            value={formData.message}
+            onChange={(e) => setFormData({ ...formData, message: e.target.value })}
+            required
+            rows={6}
+            placeholder="Type your message here..."
+            className="resize-none"
+            data-testid="sms-message-input"
+          />
+          <p className="text-xs text-muted-foreground mt-2">
+            {formData.message.length} characters
+          </p>
+        </div>
+
+        <Button
+          type="submit"
+          disabled={sending}
+          className="w-full h-12 bg-primary hover:bg-[#152B23] text-primary-foreground rounded-xl"
+          data-testid="sms-send-button"
+        >
+          <PaperPlaneTilt size={20} weight="bold" className="mr-2" />
+          {sending ? 'Sending...' : 'Send SMS'}
+        </Button>
+      </form>
+
+      <div className="bg-card border border-border p-4 rounded-xl">
+        <h3 className="font-heading text-lg font-light mb-3">Quick Templates</h3>
+        <div className="space-y-2">
+          {templates.map((template, idx) => (
+            <button
+              key={idx}
+              type="button"
+              onClick={() => setFormData({ ...formData, message: template.text(selectedConsumer) })}
+              className="w-full text-left p-3 border border-border rounded-lg active:bg-muted"
+              data-testid={`sms-template-${idx}`}
+            >
+              <div className="font-medium text-sm">{template.label}</div>
+              <div className="text-xs text-muted-foreground mt-1 line-clamp-2">
+                {template.text(selectedConsumer)}
+              </div>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="bg-muted border border-border p-4 rounded-xl">
+        <h3 className="font-heading text-base font-light mb-2">📱 SMS Info</h3>
+        <p className="text-xs text-muted-foreground">
+          SMS uses Twilio. Add credentials to backend .env to enable actual sending. Without credentials, messages are logged to console.
+        </p>
       </div>
     </div>
   );
