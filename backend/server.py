@@ -400,11 +400,11 @@ async def send_sms(sms: SMSRequest, current_user: dict = Depends(get_current_use
         url = "https://www.fast2sms.com/dev/bulk"
         
         # Prepare payload with proper URL encoding
+        # Route 'q' = Quick SMS (non-DLT, for testing)
         payload = {
-            'sender_id': 'FSTSMS',
             'message': sms.message,
             'language': 'english',
-            'route': 'v3',
+            'route': 'q',
             'numbers': consumer['phone']
         }
         
