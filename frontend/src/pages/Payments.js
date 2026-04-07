@@ -62,22 +62,28 @@ const Payments = () => {
   const handleEdit = async (e) => {
     e.preventDefault();
     try {
-      // For simplicity, just show message that payment is updated
-      // In real app, you'd need backend endpoint to update payment
-      toast.success('Payment edit functionality - contact admin to modify');
+      await axios.put(`${API_URL}/api/payments/${editingPayment.id}`, formData, {
+        withCredentials: true
+      });
+      toast.success('Payment updated');
       setEditDialogOpen(false);
       setEditingPayment(null);
       resetForm();
+      await fetchData();
     } catch (error) {
-      toast.error('Failed to update payment');
+      const msg = error.response?.data?.detail || 'Failed to update payment';
+      toast.error(msg);
     }
   };
 
   const handleDelete = async (paymentId) => {
     if (!window.confirm('Delete this payment record?')) return;
     try {
-      // Note: You'll need to add delete endpoint in backend
-      toast.info('Payment deletion - contact admin');
+      await axios.delete(`${API_URL}/api/payments/${paymentId}`, {
+        withCredentials: true
+      });
+      toast.success('Payment deleted');
+      await fetchData();
     } catch (error) {
       toast.error('Failed to delete payment');
     }
@@ -323,6 +329,15 @@ const Payments = () => {
                     data-testid={`edit-payment-${idx}`}
                   >
                     <Pencil size={18} />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => handleDelete(payment.id)}
+                    className="h-9 w-9 p-0 text-destructive hover:text-destructive"
+                    data-testid={`delete-payment-${idx}`}
+                  >
+                    <Trash size={18} />
                   </Button>
                 </div>
               </div>

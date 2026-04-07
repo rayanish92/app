@@ -377,6 +377,90 @@ async def create_payment(payment: PaymentCreate, current_user: dict = Depends(ge
     payment_dict.pop('_id', None)
     return payment_dict
 
+
+@api_router.put('/payments/{payment_id}')
+async def update_payment(payment_id: str, payment: PaymentCreate, current_user: dict = Depends(get_current_user)):
+    # Get old payment
+    old_payment = await db.payments.find_one({'id': payment_id}, {'_id': 0})
+    if not old_payment:
+        raise HTTPException(status_code=404, detail='Payment not found')
+    
+    # Get bill
+    bill = await db.bills.find_one({'id': payment.bill_id}, {'_id': 0})
+    if not bill:
+        raise HTTPException(status_code=404, detail='Bill not found')
+    
+    # Calculate difference
+    amount_diff = payment.amount - old_payment['amount']
+    
+    # Check if new amount is valid
+    if bill['due'] + old_payment['amount'] < payment.amount:
+        raise HTTPException(status_code=400, detail='Payment amount exceeds bill total')
+    
+    # Update payment
+    await db.payments.update_one(
+        {'id': payment_id},
+        {'$set': {
+            'amount': payment.amount,
+            'payment_method': payment.payment_method,
+            'notes': payment.notes or ''
+        }}
+    )
+    
+    # Update bill
+    new_paid = bill['paid'] + amount_diff
+    new_due = bill['due'] - amount_diff
+    await db.bills.update_one(
+        {'id': payment.bill_id},
+        {'$set': {'paid': round(new_paid, 2), 'due': round(new_due, 2)}}
+    )
+    
+    # Update consumer total due
+    total_due = await db.bills.aggregate([
+        {'$match': {'consumer_id': bill['consumer_id']}},
+        {'$group': {'_id': None, 'total': {'$sum': '$due'}}}
+    ]).to_list(1)
+    new_total_due = total_due[0]['total'] if total_due else 0.0
+    await db.consumers.update_one(
+        {'id': bill['consumer_id']},
+        {'$set': {'total_due': round(new_total_due, 2)}}
+    )
+    
+    return {'message': 'Payment updated successfully'}
+
+@api_router.delete('/payments/{payment_id}')
+async def delete_payment(payment_id: str, current_user: dict = Depends(get_current_user)):
+    payment = await db.payments.find_one({'id': payment_id}, {'_id': 0})
+    if not payment:
+        raise HTTPException(status_code=404, detail='Payment not found')
+    
+    # Get bill
+    bill = await db.bills.find_one({'id': payment['bill_id']}, {'_id': 0})
+    if bill:
+        # Reverse payment from bill
+        new_paid = bill['paid'] - payment['amount']
+        new_due = bill['due'] + payment['amount']
+        await db.bills.update_one(
+            {'id': payment['bill_id']},
+            {'$set': {'paid': round(new_paid, 2), 'due': round(new_due, 2)}}
+        )
+        
+        # Update consumer total due
+        total_due = await db.bills.aggregate([
+            {'$match': {'consumer_id': bill['consumer_id']}},
+            {'$group': {'_id': None, 'total': {'$sum': '$due'}}}
+        ]).to_list(1)
+        new_total_due = total_due[0]['total'] if total_due else 0.0
+        await db.consumers.update_one(
+            {'id': bill['consumer_id']},
+            {'$set': {'total_due': round(new_total_due, 2)}}
+        )
+    
+    # Delete payment
+    await db.payments.delete_one({'id': payment_id})
+    
+    return {'message': 'Payment deleted successfully'}
+
 # SMS endpoint
 @api_router.post('/sms/send')
 async def send_sms(sms: SMSRequest, current_user: dict = Depends(get_current_user)):

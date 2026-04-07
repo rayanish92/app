@@ -1,12 +1,13 @@
 {
   "name": "Agricultural Water Bill Tracker",
   "short_name": "Water Tracker",
-  "description": "Track agricultural water bills, manage consumers, and send SMS notifications",
+  "description": "Track agricultural water bills, manage consumers, and send WhatsApp notifications",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#F9F8F6",
   "theme_color": "#1E3F33",
   "orientation": "portrait-primary",
+  "version": "2.0.0",
   "icons": [
     {
       "src": "/icon-192.png",
