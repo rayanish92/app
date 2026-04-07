@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html>
+<body>
+<canvas id="canvas192" width="192" height="192"></canvas>
+<canvas id="canvas512" width="512" height="512"></canvas>
+<script>
+function createIcon(canvasId, size) {
+  const canvas = document.getElementById(canvasId);
+  const ctx = canvas.getContext('2d');
+  
+  // Background
+  ctx.fillStyle = '#1E3F33';
+  ctx.fillRect(0, 0, size, size);
+  
+  // Water droplet
+  ctx.fillStyle = '#FFFFFF';
+  ctx.beginPath();
+  const centerX = size / 2;
+  const centerY = size / 2;
+  const radius = size / 4;
+  ctx.arc(centerX, centerY - radius/4, radius, 0, Math.PI, true);
+  ctx.bezierCurveTo(centerX - radius, centerY - radius/4, centerX - radius/2, centerY + radius, centerX, centerY + radius);
+  ctx.bezierCurveTo(centerX + radius/2, centerY + radius, centerX + radius, centerY - radius/4, centerX + radius, centerY - radius/4);
+  ctx.fill();
+  
+  // Accent
+  ctx.fillStyle = '#DDA15E';
+  ctx.beginPath();
+  ctx.arc(centerX, centerY, radius/3, 0, 2 * Math.PI);
+  ctx.fill();
+}
+
+createIcon('canvas192', 192);
+createIcon('canvas512', 512);
+
+// Download links
+document.body.innerHTML += '<br><a download="icon-192.png" href="' + document.getElementById('canvas192').toDataURL() + '">Download 192x192</a>';
+document.body.innerHTML += '<br><a download="icon-512.png" href="' + document.getElementById('canvas512').toDataURL() + '">Download 512x512</a>';
+</script>
+</body>
+</html>

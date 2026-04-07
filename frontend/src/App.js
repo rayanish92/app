@@ -2,6 +2,7 @@ import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './contexts/AuthContext';
 import { ProtectedRoute } from './components/ProtectedRoute';
+import { InstallPWA } from './components/InstallPWA';
 import { Toaster } from './components/ui/sonner';
 import Layout from './components/Layout';
 import Login from './pages/Login';
@@ -36,6 +37,7 @@ function App() {
         </Routes>
       </BrowserRouter>
       <Toaster position="top-right" />
+      <InstallPWA />
     </AuthProvider>
   );
 }
