@@ -11,11 +11,34 @@ body {
         sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    overflow-x: hidden;
 }
 
 code {
     font-family:
         source-code-pro, Menlo, Monaco, Consolas, 'Courier New', monospace;
+}
+
+/* iOS Safe Area Support */
+@supports (padding: max(0px)) {
+    body {
+        padding-bottom: max(0px, env(safe-area-inset-bottom));
+    }
+}
+
+.safe-area-inset-bottom {
+    padding-bottom: env(safe-area-inset-bottom);
+}
+
+/* Mobile Touch Improvements */
+button, a {
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+}
+
+/* Disable Pull-to-Refresh on Mobile */
+body {
+    overscroll-behavior-y: contain;
 }
 
 @layer base {
@@ -39,7 +62,7 @@ code {
         --muted: 40 9% 94%;
         --muted-foreground: 140 5% 46%;
         --ring: 162 36% 18%;
-        --radius: 0.5rem;
+        --radius: 0.75rem;
     }
 }
 

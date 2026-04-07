@@ -4,7 +4,7 @@ import { AuthProvider } from './contexts/AuthContext';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { InstallPWA } from './components/InstallPWA';
 import { Toaster } from './components/ui/sonner';
-import Layout from './components/Layout';
+import MobileLayout from './components/MobileLayout';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import Consumers from './pages/Consumers';
@@ -23,7 +23,7 @@ function App() {
             path="/"
             element={
               <ProtectedRoute>
-                <Layout />
+                <MobileLayout />
               </ProtectedRoute>
             }
           >
@@ -36,7 +36,7 @@ function App() {
           </Route>
         </Routes>
       </BrowserRouter>
-      <Toaster position="top-right" />
+      <Toaster position="top-center" />
       <InstallPWA />
     </AuthProvider>
   );

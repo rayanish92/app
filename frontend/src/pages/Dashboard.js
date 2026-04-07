@@ -35,38 +35,38 @@ const Dashboard = () => {
 
   const statCards = [
     {
-      title: 'Total Consumers',
+      title: 'Consumers',
       value: stats.total_consumers,
       icon: Users,
-      color: 'text-primary',
+      color: 'bg-primary/10 text-primary',
       testId: 'total-consumers-card'
     },
     {
-      title: 'Total Bills',
+      title: 'Bills',
       value: stats.total_bills,
       icon: FileText,
-      color: 'text-accent',
+      color: 'bg-accent/10 text-accent',
       testId: 'total-bills-card'
     },
     {
       title: 'Total Amount',
-      value: `₹${stats.total_amount.toFixed(2)}`,
+      value: `₹${stats.total_amount.toFixed(0)}`,
       icon: CurrencyDollar,
-      color: 'text-primary',
+      color: 'bg-primary/10 text-primary',
       testId: 'total-amount-card'
     },
     {
-      title: 'Total Paid',
-      value: `₹${stats.total_paid.toFixed(2)}`,
+      title: 'Paid',
+      value: `₹${stats.total_paid.toFixed(0)}`,
       icon: Drop,
-      color: 'text-green-600',
+      color: 'bg-green-100 text-green-700',
       testId: 'total-paid-card'
     },
     {
-      title: 'Total Due',
-      value: `₹${stats.total_due.toFixed(2)}`,
+      title: 'Due',
+      value: `₹${stats.total_due.toFixed(0)}`,
       icon: Warning,
-      color: 'text-destructive',
+      color: 'bg-destructive/10 text-destructive',
       testId: 'total-due-card'
     }
   ];
@@ -74,74 +74,88 @@ const Dashboard = () => {
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
-        <div className="text-muted-foreground">Loading dashboard...</div>
+        <div className="text-muted-foreground">Loading...</div>
       </div>
     );
   }
 
   return (
-    <div className="space-y-8" data-testid="dashboard-page">
+    <div className="space-y-6" data-testid="dashboard-page">
       <div>
-        <h1 className="font-heading text-4xl sm:text-5xl font-light tracking-tight text-foreground">
+        <h1 className="font-heading text-3xl font-light tracking-tight text-foreground">
           Dashboard
         </h1>
-        <p className="mt-2 text-muted-foreground">Welcome back, {user?.name}</p>
+        <p className="mt-1 text-sm text-muted-foreground">Welcome back, {user?.name}</p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4">
+      <div className="grid grid-cols-2 gap-3">
         {statCards.map((card, idx) => {
           const Icon = card.icon;
           return (
             <div
               key={idx}
-              className="bg-card border border-border p-6 rounded-md hover:-translate-y-px transition-transform"
+              className="bg-card border border-border p-4 rounded-xl"
               data-testid={card.testId}
             >
-              <div className="flex items-start justify-between">
-                <div className="space-y-2">
-                  <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+              <div className="space-y-2">
+                <div className={`inline-flex p-2 rounded-lg ${card.color}`}>
+                  <Icon size={20} weight="duotone" />
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">
                     {card.title}
                   </p>
-                  <p className="text-2xl font-heading font-light">{card.value}</p>
+                  <p className="text-xl font-heading font-light mt-1">{card.value}</p>
                 </div>
-                <Icon size={24} className={card.color} weight="duotone" />
               </div>
             </div>
           );
         })}
       </div>
 
-      <div className="bg-card border border-border p-8 rounded-md">
-        <h2 className="font-heading text-2xl sm:text-3xl font-light tracking-tight mb-4">
+      <div className="bg-card border border-border p-5 rounded-xl">
+        <h2 className="font-heading text-xl font-light tracking-tight mb-4">
           Quick Actions
         </h2>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="space-y-2">
           <a
             href="/consumers"
-            className="p-6 border border-border rounded-md hover:border-primary hover:-translate-y-px transition-all"
+            className="flex items-center gap-3 p-4 border border-border rounded-lg active:bg-muted"
             data-testid="quick-action-consumers"
           >
-            <Users size={32} className="text-primary mb-3" weight="duotone" />
-            <h3 className="font-heading text-lg font-light mb-1">Manage Consumers</h3>
-            <p className="text-sm text-muted-foreground">Add, edit, or delete consumer records</p>
+            <div className="bg-primary/10 p-2 rounded-lg">
+              <Users size={22} className="text-primary" weight="duotone" />
+            </div>
+            <div className="flex-1">
+              <h3 className="font-heading text-base font-light">Manage Consumers</h3>
+              <p className="text-xs text-muted-foreground">Add or edit consumer records</p>
+            </div>
           </a>
           <a
             href="/bills"
-            className="p-6 border border-border rounded-md hover:border-accent hover:-translate-y-px transition-all"
+            className="flex items-center gap-3 p-4 border border-border rounded-lg active:bg-muted"
             data-testid="quick-action-bills"
           >
-            <FileText size={32} className="text-accent mb-3" weight="duotone" />
-            <h3 className="font-heading text-lg font-light mb-1">Generate Bills</h3>
-            <p className="text-sm text-muted-foreground">Create and manage water bills</p>
+            <div className="bg-accent/10 p-2 rounded-lg">
+              <FileText size={22} className="text-accent" weight="duotone" />
+            </div>
+            <div className="flex-1">
+              <h3 className="font-heading text-base font-light">Generate Bills</h3>
+              <p className="text-xs text-muted-foreground">Create and manage water bills</p>
+            </div>
           </a>
           <a
             href="/payments"
-            className="p-6 border border-border rounded-md hover:border-primary hover:-translate-y-px transition-all"
+            className="flex items-center gap-3 p-4 border border-border rounded-lg active:bg-muted"
             data-testid="quick-action-payments"
           >
-            <CurrencyDollar size={32} className="text-primary mb-3" weight="duotone" />
-            <h3 className="font-heading text-lg font-light mb-1">Record Payments</h3>
-            <p className="text-sm text-muted-foreground">Add payment entries and view history</p>
+            <div className="bg-primary/10 p-2 rounded-lg">
+              <CurrencyDollar size={22} className="text-primary" weight="duotone" />
+            </div>
+            <div className="flex-1">
+              <h3 className="font-heading text-base font-light">Record Payments</h3>
+              <p className="text-xs text-muted-foreground">Add payment entries</p>
+            </div>
           </a>
         </div>
       </div>

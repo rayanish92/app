@@ -54,7 +54,7 @@ const Bills = () => {
       toast.success('Bill created successfully');
       setDialogOpen(false);
       resetForm();
-      fetchData();
+      await fetchData();
     } catch (error) {
       toast.error('Failed to create bill');
     }
@@ -81,7 +81,7 @@ const Bills = () => {
       });
       toast.success('Rate configuration updated');
       setRateDialogOpen(false);
-      fetchData();
+      await fetchData();
     } catch (error) {
       toast.error('Failed to update rate');
     }
