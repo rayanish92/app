@@ -18,8 +18,7 @@ const MobileLayout = () => {
     { path: '/dashboard', label: 'Dashboard', icon: ChartLine },
     { path: '/consumers', label: 'Consumers', icon: Users },
     { path: '/bills', label: 'Bills', icon: FileText },
-    { path: '/payments', label: 'Payments', icon: CurrencyDollar },
-    { path: '/sms', label: 'SMS', icon: ChatCircleText }
+    { path: '/payments', label: 'Payments', icon: CurrencyDollar }
   ];
 
   return (
@@ -57,7 +56,7 @@ const MobileLayout = () => {
 
       {/* Bottom Navigation */}
       <nav className="fixed bottom-0 left-0 right-0 bg-card border-t border-border safe-area-inset-bottom" style={{ zIndex: 99999 }} data-testid="bottom-nav">
-        <div className="grid grid-cols-5 h-16">
+        <div className="grid grid-cols-4 h-16">
           {navItems.map((item) => {
             const Icon = item.icon;
             const isActive = location.pathname === item.path;

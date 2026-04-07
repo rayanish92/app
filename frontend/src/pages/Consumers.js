@@ -4,7 +4,7 @@ import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '../components/ui/dialog';
-import { Plus, Trash, Pencil, Phone, MapPin } from '@phosphor-icons/react';
+import { Plus, Trash, Pencil, Phone, MapPin, WhatsappLogo } from '@phosphor-icons/react';
 import { toast } from 'sonner';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
@@ -99,6 +99,12 @@ const Consumers = () => {
     setDialogOpen(true);
   };
 
+  const sendWhatsApp = (consumer) => {
+    const message = `Hello ${consumer.name},\n\nYour water bill details:\nTotal Due: ₹${consumer.total_due.toFixed(0)}\n\nPlease pay at your earliest convenience.\n\nThank you!`;
+    const whatsappUrl = `https://wa.me/91${consumer.phone}?text=${encodeURIComponent(message)}`;
+    window.open(whatsappUrl, '_blank');
+  };
+
   if (loading) {
     return <div className="flex justify-center p-8">Loading...</div>;
   }
@@ -151,6 +157,7 @@ const Consumers = () => {
                   onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
                   required
                   className="h-11"
+                  placeholder="10-digit number"
                   data-testid="consumer-phone-input"
                 />
               </div>
@@ -243,6 +250,15 @@ const Consumers = () => {
                   )}
                 </div>
                 <div className="flex gap-2">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => sendWhatsApp(consumer)}
+                    className="h-9 w-9 p-0 text-green-600 hover:text-green-600"
+                    data-testid={`whatsapp-consumer-${idx}`}
+                  >
+                    <WhatsappLogo size={20} weight="fill" />
+                  </Button>
                   <Button
                     variant="ghost"
                     size="sm"

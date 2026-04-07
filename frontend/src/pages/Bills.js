@@ -5,7 +5,7 @@ import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '../components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
-import { Plus, Trash, Gear } from '@phosphor-icons/react';
+import { Plus, Trash, Gear, Pencil, WhatsappLogo } from '@phosphor-icons/react';
 import { toast } from 'sonner';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
@@ -16,7 +16,9 @@ const Bills = () => {
   const [rateConfig, setRateConfig] = useState({ rate_per_bigha: 100, katha_to_bigha_ratio: 20 });
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [rateDialogOpen, setRateDialogOpen] = useState(false);
+  const [editingBill, setEditingBill] = useState(null);
   const [formData, setFormData] = useState({
     consumer_id: '',
     land_used_bigha: 0,
@@ -60,6 +62,26 @@ const Bills = () => {
     }
   };
 
+  const handleEdit = async (e) => {
+    e.preventDefault();
+    try {
+      // Delete old bill and create new one with updated values
+      await axios.delete(`${API_URL}/api/bills/${editingBill.id}`, {
+        withCredentials: true
+      });
+      await axios.post(`${API_URL}/api/bills`, formData, {
+        withCredentials: true
+      });
+      toast.success('Bill updated');
+      setEditDialogOpen(false);
+      setEditingBill(null);
+      resetForm();
+      await fetchData();
+    } catch (error) {
+      toast.error('Failed to update bill');
+    }
+  };
+
   const handleDelete = async (id) => {
     if (!window.confirm('Delete this bill?')) return;
     try {
@@ -87,6 +109,17 @@ const Bills = () => {
     }
   };
 
+  const openEditDialog = (bill) => {
+    setEditingBill(bill);
+    setFormData({
+      consumer_id: bill.consumer_id,
+      land_used_bigha: bill.land_used_bigha,
+      land_used_katha: bill.land_used_katha,
+      billing_period: bill.billing_period
+    });
+    setEditDialogOpen(true);
+  };
+
   const resetForm = () => {
     setFormData({
       consumer_id: '',
@@ -94,6 +127,17 @@ const Bills = () => {
       land_used_katha: 0,
       billing_period: ''
     });
+  };
+
+  const sendWhatsAppBill = (bill) => {
+    const consumer = consumers.find(c => c.id === bill.consumer_id);
+    if (!consumer) {
+      toast.error('Consumer not found');
+      return;
+    }
+    const message = `Hello ${bill.consumer_name},\\n\\n*Water Bill - ${bill.billing_period}*\\n\\nLand Used: ${bill.total_land_in_bigha} Bigha\\nTotal Amount: ₹${bill.amount.toFixed(0)}\\nPaid: ₹${bill.paid.toFixed(0)}\\nDue: ₹${bill.due.toFixed(0)}\\n\\nPlease pay your dues at the earliest.\\n\\nThank you!`;
+    const whatsappUrl = `https://wa.me/91${consumer.phone}?text=${encodeURIComponent(message)}`;
+    window.open(whatsappUrl, '_blank');
   };
 
   if (loading) {
@@ -265,6 +309,72 @@ const Bills = () => {
               </form>
             </DialogContent>
           </Dialog>
+
+          {/* Edit Bill Dialog */}
+          <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
+            <DialogContent className="max-w-[90vw] rounded-xl">
+              <DialogHeader>
+                <DialogTitle className="font-heading text-xl font-light">Edit Bill</DialogTitle>
+              </DialogHeader>
+              <form onSubmit={handleEdit} className="space-y-3">
+                <div>
+                  <Label className="text-xs uppercase tracking-wider">Consumer</Label>
+                  <div className="text-sm py-2">{editingBill?.consumer_name}</div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <Label htmlFor="edit_bigha" className="text-xs uppercase tracking-wider">Bigha</Label>
+                    <Input
+                      id="edit_bigha"
+                      type="number"
+                      step="0.01"
+                      value={formData.land_used_bigha}
+                      onChange={(e) => setFormData({ ...formData, land_used_bigha: parseFloat(e.target.value) || 0 })}
+                      className="h-11"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="edit_katha" className="text-xs uppercase tracking-wider">Katha</Label>
+                    <Input
+                      id="edit_katha"
+                      type="number"
+                      step="0.01"
+                      value={formData.land_used_katha}
+                      onChange={(e) => setFormData({ ...formData, land_used_katha: parseFloat(e.target.value) || 0 })}
+                      className="h-11"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <Label htmlFor="edit_period" className="text-xs uppercase tracking-wider">Period</Label>
+                  <Input
+                    id="edit_period"
+                    value={formData.billing_period}
+                    onChange={(e) => setFormData({ ...formData, billing_period: e.target.value })}
+                    required
+                    className="h-11"
+                  />
+                </div>
+                <div className="flex gap-2 pt-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => {
+                      setEditDialogOpen(false);
+                      setEditingBill(null);
+                      resetForm();
+                    }}
+                    className="flex-1 h-11"
+                  >
+                    Cancel
+                  </Button>
+                  <Button type="submit" className="flex-1 h-11 bg-primary hover:bg-[#152B23]">
+                    Update
+                  </Button>
+                </div>
+              </form>
+            </DialogContent>
+          </Dialog>
         </div>
       </div>
 
@@ -285,15 +395,35 @@ const Bills = () => {
                   <h3 className="font-heading text-lg font-light">{bill.consumer_name}</h3>
                   <p className="text-sm text-muted-foreground">{bill.billing_period}</p>
                 </div>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => handleDelete(bill.id)}
-                  className="h-9 w-9 p-0 text-destructive hover:text-destructive"
-                  data-testid={`delete-bill-${idx}`}
-                >
-                  <Trash size={18} />
-                </Button>
+                <div className="flex gap-2">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => sendWhatsAppBill(bill)}
+                    className="h-9 w-9 p-0 text-green-600 hover:text-green-600"
+                    data-testid={`whatsapp-bill-${idx}`}
+                  >
+                    <WhatsappLogo size={20} weight="fill" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => openEditDialog(bill)}
+                    className="h-9 w-9 p-0"
+                    data-testid={`edit-bill-${idx}`}
+                  >
+                    <Pencil size={18} />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => handleDelete(bill.id)}
+                    className="h-9 w-9 p-0 text-destructive hover:text-destructive"
+                    data-testid={`delete-bill-${idx}`}
+                  >
+                    <Trash size={18} />
+                  </Button>
+                </div>
               </div>
               <div className="grid grid-cols-2 gap-3 mb-3">
                 <div>
