@@ -100,7 +100,7 @@ const Consumers = () => {
   };
 
   const sendWhatsApp = (consumer) => {
-    const message = `Hello ${consumer.name},\n\nYour water bill details:\nTotal Due: ₹${consumer.total_due.toFixed(0)}\n\nPlease pay at your earliest convenience.\n\nThank you!`;
+    const message = `নমস্কার ${consumer.name},\n\nআপনার জলের বিল বিবরণ:\nমোট বকেয়া: ₹${consumer.total_due.toFixed(0)}\n\nদয়া করে যত তাড়াতাড়ি সম্ভব পরিশোধ করুন।\n\nধন্যবাদ!\n\n---\n\nHello ${consumer.name},\n\nYour water bill details:\nTotal Due: ₹${consumer.total_due.toFixed(0)}\n\nPlease pay at your earliest convenience.\n\nThank you!`;
     const whatsappUrl = `https://wa.me/91${consumer.phone}?text=${encodeURIComponent(message)}`;
     window.open(whatsappUrl, '_blank');
   };

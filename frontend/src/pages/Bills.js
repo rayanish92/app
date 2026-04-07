@@ -135,7 +135,7 @@ const Bills = () => {
       toast.error('Consumer not found');
       return;
     }
-    const message = `Hello ${bill.consumer_name},\\n\\n*Water Bill - ${bill.billing_period}*\\n\\nLand Used: ${bill.total_land_in_bigha} Bigha\\nTotal Amount: ₹${bill.amount.toFixed(0)}\\nPaid: ₹${bill.paid.toFixed(0)}\\nDue: ₹${bill.due.toFixed(0)}\\n\\nPlease pay your dues at the earliest.\\n\\nThank you!`;
+    const message = `নমস্কার ${bill.consumer_name},\n\n*জলের বিল - ${bill.billing_period}*\n\nজমি ব্যবহৃত: ${bill.total_land_in_bigha} বিঘা\nমোট পরিমাণ: ₹${bill.amount.toFixed(0)}\nপরিশোধিত: ₹${bill.paid.toFixed(0)}\nবকেয়া: ₹${bill.due.toFixed(0)}\n\nদয়া করে যত তাড়াতাড়ি সম্ভব আপনার বকেয়া পরিশোধ করুন।\n\nধন্যবাদ!\n\n---\n\nHello ${bill.consumer_name},\n\n*Water Bill - ${bill.billing_period}*\n\nLand Used: ${bill.total_land_in_bigha} Bigha\nTotal Amount: ₹${bill.amount.toFixed(0)}\nPaid: ₹${bill.paid.toFixed(0)}\nDue: ₹${bill.due.toFixed(0)}\n\nPlease pay your dues at the earliest.\n\nThank you!`;
     const whatsappUrl = `https://wa.me/91${consumer.phone}?text=${encodeURIComponent(message)}`;
     window.open(whatsappUrl, '_blank');
   };
