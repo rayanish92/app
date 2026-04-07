@@ -394,36 +394,55 @@ async def send_sms(sms: SMSRequest, current_user: dict = Depends(get_current_use
     
     try:
         import requests
+        from urllib.parse import urlencode
         
-        # Fast2SMS API endpoint
-        url = "https://www.fast2sms.com/dev/bulkV2"
+        # Fast2SMS API endpoint - use /dev/bulk (not bulkV2)
+        url = "https://www.fast2sms.com/dev/bulk"
         
-        # Prepare payload
+        # Prepare payload with proper URL encoding
         payload = {
             'sender_id': 'FSTSMS',
             'message': sms.message,
             'language': 'english',
-            'route': 'q',  # Quick transactional route
+            'route': 'v3',
             'numbers': consumer['phone']
         }
         
         headers = {
             'authorization': fast2sms_api_key,
-            'Content-Type': 'application/x-www-form-urlencoded',
-            'Cache-Control': 'no-cache'
+            'Content-Type': "application/x-www-form-urlencoded",
+            'Cache-Control': "no-cache"
         }
         
         # Send SMS
+        logging.info(f"Sending SMS to {consumer['phone']} via Fast2SMS")
+        logging.info(f"Payload: {payload}")
+        
         response = requests.post(url, data=payload, headers=headers, timeout=30)
-        response.raise_for_status()
         
-        result = response.json()
-        logging.info(f"Fast2SMS response: {result}")
+        logging.info(f"Fast2SMS status code: {response.status_code}")
+        logging.info(f"Fast2SMS response: {response.text}")
         
-        return {'message': 'SMS sent successfully via Fast2SMS', 'response': result}
+        # Check response
+        if response.status_code == 200:
+            result = response.json()
+            return {
+                'message': 'SMS sent successfully via Fast2SMS',
+                'response': result,
+                'phone': consumer['phone']
+            }
+        else:
+            error_msg = f"Fast2SMS API error: {response.status_code} - {response.text}"
+            logging.error(error_msg)
+            # Return error details to help debug
+            return {
+                'message': f'SMS failed: {response.text}',
+                'status_code': response.status_code,
+                'error': response.text
+            }
         
-    except requests.exceptions.RequestException as e:
-        logging.error(f"Fast2SMS error: {str(e)}")
+    except Exception as e:
+        logging.error(f"Fast2SMS exception: {str(e)}")
         raise HTTPException(status_code=500, detail=f'Failed to send SMS: {str(e)}')
 
 # Dashboard stats
