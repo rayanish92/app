@@ -1,4 +1,4 @@
-const CACHE_NAME = 'water-tracker-v2';
+const CACHE_NAME = 'water-tracker-v3';
 const urlsToCache = [
   '/',
   '/manifest.json'

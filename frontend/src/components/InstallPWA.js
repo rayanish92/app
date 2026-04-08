@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { Button } from './ui/button';
 import { Download, X } from '@phosphor-icons/react';
 
@@ -18,7 +18,7 @@ export const InstallPWA = () => {
     return () => window.removeEventListener('beforeinstallprompt', handler);
   }, []);
 
-  const handleInstall = async () => {
+  const handleInstall = useCallback(async () => {
     if (!deferredPrompt) return;
 
     deferredPrompt.prompt();
@@ -30,7 +30,7 @@ export const InstallPWA = () => {
     
     setDeferredPrompt(null);
     setShowInstall(false);
-  };
+  }, [deferredPrompt]);
 
   if (!showInstall) return null;
 

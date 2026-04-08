@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
@@ -22,11 +22,7 @@ const Consumers = () => {
     land_katha: 0
   });
 
-  useEffect(() => {
-    fetchConsumers();
-  }, []);
-
-  const fetchConsumers = async () => {
+  const fetchConsumers = useCallback(async () => {
     try {
       const { data } = await axios.get(`${API_URL}/api/consumers`, {
         withCredentials: true
@@ -37,7 +33,11 @@ const Consumers = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    fetchConsumers();
+  }, [fetchConsumers]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();

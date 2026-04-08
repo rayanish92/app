@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { useAuth } from '../contexts/AuthContext';
 import { Drop, Users, FileText, CurrencyDollar, Warning } from '@phosphor-icons/react';
@@ -16,11 +16,7 @@ const Dashboard = () => {
   });
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    fetchStats();
-  }, []);
-
-  const fetchStats = async () => {
+  const fetchStats = useCallback(async () => {
     try {
       const { data } = await axios.get(`${API_URL}/api/dashboard/stats`, {
         withCredentials: true
@@ -31,10 +27,15 @@ const Dashboard = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    fetchStats();
+  }, [fetchStats]);
 
   const statCards = [
     {
+      id: 'consumers',
       title: 'Consumers',
       value: stats.total_consumers,
       icon: Users,
@@ -42,6 +43,7 @@ const Dashboard = () => {
       testId: 'total-consumers-card'
     },
     {
+      id: 'bills',
       title: 'Bills',
       value: stats.total_bills,
       icon: FileText,
@@ -49,6 +51,7 @@ const Dashboard = () => {
       testId: 'total-bills-card'
     },
     {
+      id: 'amount',
       title: 'Total Amount',
       value: `₹${stats.total_amount.toFixed(0)}`,
       icon: CurrencyDollar,
@@ -56,6 +59,7 @@ const Dashboard = () => {
       testId: 'total-amount-card'
     },
     {
+      id: 'paid',
       title: 'Paid',
       value: `₹${stats.total_paid.toFixed(0)}`,
       icon: Drop,
@@ -63,6 +67,7 @@ const Dashboard = () => {
       testId: 'total-paid-card'
     },
     {
+      id: 'due',
       title: 'Due',
       value: `₹${stats.total_due.toFixed(0)}`,
       icon: Warning,
@@ -89,11 +94,11 @@ const Dashboard = () => {
       </div>
 
       <div className="grid grid-cols-2 gap-3">
-        {statCards.map((card, idx) => {
+        {statCards.map((card) => {
           const Icon = card.icon;
           return (
             <div
-              key={idx}
+              key={card.id}
               className="bg-card border border-border p-4 rounded-xl"
               data-testid={card.testId}
             >
