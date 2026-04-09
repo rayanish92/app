@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
@@ -102,8 +102,13 @@ const Login = () => {
             </Button>
           </form>
 
-          <div className="text-xs text-center text-muted-foreground">
-            Default: admin@waterbill.com / admin123
+          <div className="text-xs text-center text-muted-foreground space-y-2">
+            <div>Default: admin@waterbill.com / admin123</div>
+            <div>
+              <Link to="/forgot-password" className="text-primary hover:underline" data-testid="forgot-password-link">
+                Forgot Password?
+              </Link>
+            </div>
           </div>
         </div>
       </div>

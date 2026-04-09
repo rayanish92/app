@@ -5,8 +5,9 @@ import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '../components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
-import { Plus, Calendar, Pencil, Trash } from '@phosphor-icons/react';
+import { Plus, Calendar, Pencil, Trash, DownloadSimple } from '@phosphor-icons/react';
 import { toast } from 'sonner';
+import { exportToCSV, exportToPDF } from '../lib/exportUtils';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
 
@@ -111,6 +112,17 @@ const Payments = () => {
     });
   };
 
+  const handleExport = (format) => {
+    const headers = ['Consumer', 'Amount', 'Method', 'Notes', 'Date'];
+    const rows = payments.map(p => [p.consumer_name, p.amount, p.payment_method, p.notes, new Date(p.created_at).toLocaleDateString()]);
+    if (format === 'csv') {
+      exportToCSV(rows, headers, 'payments.csv');
+    } else {
+      exportToPDF(rows, headers, 'Payments Report', 'payments.pdf');
+    }
+    toast.success(`Exported as ${format.toUpperCase()}`);
+  };
+
   const selectedBill = bills.find(b => b.id === formData.bill_id);
 
   if (loading) {
@@ -126,6 +138,17 @@ const Payments = () => {
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">{payments.length} total</p>
         </div>
+        <div className="flex gap-1">
+          {payments.length > 0 && (
+            <>
+              <Button variant="outline" size="sm" onClick={() => handleExport('csv')} className="h-10 px-3 text-xs" data-testid="export-payments-csv">
+                <DownloadSimple size={16} className="mr-1" /> CSV
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => handleExport('pdf')} className="h-10 px-3 text-xs" data-testid="export-payments-pdf">
+                <DownloadSimple size={16} className="mr-1" /> PDF
+              </Button>
+            </>
+          )}
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
           <DialogTrigger asChild>
             <Button
@@ -297,6 +320,7 @@ const Payments = () => {
             </form>
           </DialogContent>
         </Dialog>
+        </div>
       </div>
 
       {payments.length === 0 ? (

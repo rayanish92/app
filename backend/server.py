@@ -13,6 +13,7 @@ from routes.auth import router as auth_router
 from routes.consumers import router as consumers_router
 from routes.bills import router as bills_router
 from routes.payments import router as payments_router
+from routes.export import router as export_router
 from utils.auth import hash_password, verify_password, get_current_user
 
 ROOT_DIR = Path(__file__).parent
@@ -42,6 +43,7 @@ app.include_router(auth_router, prefix="/api")
 app.include_router(consumers_router, prefix="/api")
 app.include_router(bills_router, prefix="/api")
 app.include_router(payments_router, prefix="/api")
+app.include_router(export_router, prefix="/api")
 
 # --- Rate Config (kept here as a small global endpoint) ---
 
@@ -149,6 +151,7 @@ async def startup_event():
         logger.info('Admin password updated')
 
     await db.users.create_index('email', unique=True)
+    await db.password_reset_tokens.create_index('expires_at', expireAfterSeconds=3600)
 
     credentials_path = Path('/app/memory')
     credentials_path.mkdir(exist_ok=True)

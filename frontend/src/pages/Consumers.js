@@ -4,8 +4,9 @@ import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '../components/ui/dialog';
-import { Plus, Trash, Pencil, Phone, MapPin, WhatsappLogo } from '@phosphor-icons/react';
+import { Plus, Trash, Pencil, Phone, MapPin, WhatsappLogo, DownloadSimple } from '@phosphor-icons/react';
 import { toast } from 'sonner';
+import { exportToCSV, exportToPDF } from '../lib/exportUtils';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
 
@@ -105,6 +106,17 @@ const Consumers = () => {
     window.open(whatsappUrl, '_blank');
   };
 
+  const handleExport = (format) => {
+    const headers = ['Name', 'Phone', 'Address', 'Bigha', 'Katha', 'Total Due'];
+    const rows = consumers.map(c => [c.name, c.phone, c.address, c.land_bigha, c.land_katha, c.total_due]);
+    if (format === 'csv') {
+      exportToCSV(rows, headers, 'consumers.csv');
+    } else {
+      exportToPDF(rows, headers, 'Consumers Report', 'consumers.pdf');
+    }
+    toast.success(`Exported as ${format.toUpperCase()}`);
+  };
+
   if (loading) {
     return <div className="flex justify-center p-8">Loading...</div>;
   }
@@ -118,6 +130,17 @@ const Consumers = () => {
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">{consumers.length} total</p>
         </div>
+        <div className="flex gap-2">
+          {consumers.length > 0 && (
+            <div className="flex gap-1">
+              <Button variant="outline" size="sm" onClick={() => handleExport('csv')} className="h-10 px-3 text-xs" data-testid="export-consumers-csv">
+                <DownloadSimple size={16} className="mr-1" /> CSV
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => handleExport('pdf')} className="h-10 px-3 text-xs" data-testid="export-consumers-pdf">
+                <DownloadSimple size={16} className="mr-1" /> PDF
+              </Button>
+            </div>
+          )}
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
           <DialogTrigger asChild>
             <Button
@@ -221,6 +244,7 @@ const Consumers = () => {
             </form>
           </DialogContent>
         </Dialog>
+        </div>
       </div>
 
       {consumers.length === 0 ? (

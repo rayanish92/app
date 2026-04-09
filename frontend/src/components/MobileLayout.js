@@ -1,13 +1,61 @@
-import React from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { Button } from '../components/ui/button';
-import { Drop, ChartLine, Users, FileText, CurrencyDollar, SignOut, UserCircle } from '@phosphor-icons/react';
+import { Drop, ChartLine, Users, FileText, CurrencyDollar, SignOut, UserCircle, WifiSlash, ArrowsClockwise } from '@phosphor-icons/react';
+import { toast } from 'sonner';
+import axios from 'axios';
+import { getQueue, syncQueue } from '../lib/offlineQueue';
+
+const API_URL = process.env.REACT_APP_BACKEND_URL;
 
 const MobileLayout = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const { user, logout } = useAuth();
+  const [isOffline, setIsOffline] = useState(!navigator.onLine);
+  const [pendingOps, setPendingOps] = useState(getQueue().length);
+  const [syncing, setSyncing] = useState(false);
+
+  useEffect(() => {
+    const goOffline = () => setIsOffline(true);
+    const goOnline = () => {
+      setIsOffline(false);
+      handleSync();
+    };
+    window.addEventListener('offline', goOffline);
+    window.addEventListener('online', goOnline);
+    return () => {
+      window.removeEventListener('offline', goOffline);
+      window.removeEventListener('online', goOnline);
+    };
+  }, []);
+
+  // Check pending queue periodically
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setPendingOps(getQueue().length);
+    }, 2000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const handleSync = useCallback(async () => {
+    const queue = getQueue();
+    if (queue.length === 0) return;
+    setSyncing(true);
+    try {
+      const result = await syncQueue(axios, API_URL);
+      setPendingOps(getQueue().length);
+      if (result.synced > 0) {
+        toast.success(`Synced ${result.synced} pending operation(s)`);
+      }
+      if (result.failed > 0) {
+        toast.error(`${result.failed} operation(s) failed to sync`);
+      }
+    } finally {
+      setSyncing(false);
+    }
+  }, []);
 
   const handleLogout = async () => {
     await logout();
@@ -24,6 +72,32 @@ const MobileLayout = () => {
 
   return (
     <div className="min-h-screen bg-background pb-20" data-testid="layout">
+      {/* Offline / Sync Banner */}
+      {(isOffline || pendingOps > 0) && (
+        <div className={`px-4 py-2 text-xs flex items-center justify-between ${isOffline ? 'bg-amber-100 text-amber-800' : 'bg-blue-50 text-blue-700'}`} data-testid="offline-banner">
+          <div className="flex items-center gap-2">
+            {isOffline && <WifiSlash size={16} weight="bold" />}
+            <span>
+              {isOffline ? 'You are offline' : ''}
+              {pendingOps > 0 && `${isOffline ? ' — ' : ''}${pendingOps} pending operation(s)`}
+            </span>
+          </div>
+          {pendingOps > 0 && !isOffline && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleSync}
+              disabled={syncing}
+              className="h-7 px-2 text-xs"
+              data-testid="sync-button"
+            >
+              <ArrowsClockwise size={14} className={syncing ? 'animate-spin' : ''} />
+              <span className="ml-1">{syncing ? 'Syncing...' : 'Sync'}</span>
+            </Button>
+          )}
+        </div>
+      )}
+
       {/* Mobile Header */}
       <header className="bg-card border-b border-border sticky top-0 z-40">
         <div className="px-4 py-3">

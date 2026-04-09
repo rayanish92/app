@@ -5,8 +5,9 @@ import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '../components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
-import { Plus, Trash, Gear, Pencil, WhatsappLogo } from '@phosphor-icons/react';
+import { Plus, Trash, Gear, Pencil, WhatsappLogo, DownloadSimple } from '@phosphor-icons/react';
 import { toast } from 'sonner';
+import { exportToCSV, exportToPDF } from '../lib/exportUtils';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
 
@@ -140,6 +141,17 @@ const Bills = () => {
     window.open(whatsappUrl, '_blank');
   };
 
+  const handleExport = (format) => {
+    const headers = ['Consumer', 'Period', 'Land (Bigha)', 'Amount', 'Paid', 'Due'];
+    const rows = bills.map(b => [b.consumer_name, b.billing_period, b.total_land_in_bigha, b.amount, b.paid, b.due]);
+    if (format === 'csv') {
+      exportToCSV(rows, headers, 'bills.csv');
+    } else {
+      exportToPDF(rows, headers, 'Bills Report', 'bills.pdf');
+    }
+    toast.success(`Exported as ${format.toUpperCase()}`);
+  };
+
   if (loading) {
     return <div className="flex justify-center p-8">Loading...</div>;
   }
@@ -153,7 +165,17 @@ const Bills = () => {
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">{bills.length} total bills</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-1 flex-wrap justify-end">
+          {bills.length > 0 && (
+            <>
+              <Button variant="outline" size="sm" onClick={() => handleExport('csv')} className="h-10 px-3 text-xs" data-testid="export-bills-csv">
+                <DownloadSimple size={16} className="mr-1" /> CSV
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => handleExport('pdf')} className="h-10 px-3 text-xs" data-testid="export-bills-pdf">
+                <DownloadSimple size={16} className="mr-1" /> PDF
+              </Button>
+            </>
+          )}
           <Dialog open={rateDialogOpen} onOpenChange={setRateDialogOpen}>
             <DialogTrigger asChild>
               <Button variant="outline" size="sm" className="h-10 w-10 p-0" data-testid="configure-rate-button">

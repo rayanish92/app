@@ -6,7 +6,7 @@ import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '../components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
-import { Plus, Trash, UserCircle, ShieldCheck } from '@phosphor-icons/react';
+import { Plus, Trash, UserCircle, ShieldCheck, Key } from '@phosphor-icons/react';
 import { toast } from 'sonner';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
@@ -16,6 +16,9 @@ const Users = () => {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [resetDialogOpen, setResetDialogOpen] = useState(false);
+  const [resetTarget, setResetTarget] = useState(null);
+  const [newPassword, setNewPassword] = useState('');
   const [formData, setFormData] = useState({
     email: '',
     password: '',
@@ -67,6 +70,27 @@ const Users = () => {
     } catch (error) {
       const msg = error.response?.data?.detail || 'Failed to delete user';
       toast.error(typeof msg === 'string' ? msg : 'Failed to delete user');
+    }
+  };
+
+  const handleResetPassword = async (e) => {
+    e.preventDefault();
+    if (newPassword.length < 4) {
+      toast.error('Password must be at least 4 characters');
+      return;
+    }
+    try {
+      await axios.put(
+        `${API_URL}/api/auth/users/${resetTarget._id}/reset-password`,
+        { new_password: newPassword },
+        { withCredentials: true }
+      );
+      toast.success(`Password reset for ${resetTarget.email}`);
+      setResetDialogOpen(false);
+      setResetTarget(null);
+      setNewPassword('');
+    } catch (error) {
+      toast.error('Failed to reset password');
     }
   };
 
@@ -180,6 +204,52 @@ const Users = () => {
         </Dialog>
       </div>
 
+      {/* Reset Password Dialog */}
+      <Dialog open={resetDialogOpen} onOpenChange={setResetDialogOpen}>
+        <DialogContent className="max-w-[90vw] rounded-xl" data-testid="reset-password-dialog">
+          <DialogHeader>
+            <DialogTitle className="font-heading text-xl font-light">
+              Reset Password
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            Reset password for <strong>{resetTarget?.email}</strong>
+          </p>
+          <form onSubmit={handleResetPassword} className="space-y-3">
+            <div>
+              <Label htmlFor="new-pw" className="text-xs uppercase tracking-wider">New Password</Label>
+              <Input
+                id="new-pw"
+                type="password"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                required
+                minLength={4}
+                className="h-11"
+                data-testid="admin-reset-password-input"
+              />
+            </div>
+            <div className="flex gap-2 pt-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => { setResetDialogOpen(false); setNewPassword(''); }}
+                className="flex-1 h-11"
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                className="flex-1 h-11 bg-primary hover:bg-[#152B23]"
+                data-testid="admin-reset-submit-button"
+              >
+                Reset
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
+
       {users.length === 0 ? (
         <div className="text-center py-12 bg-card border border-border rounded-xl">
           <p className="text-muted-foreground text-sm">No users yet</p>
@@ -202,7 +272,7 @@ const Users = () => {
                     <p className="text-sm text-muted-foreground">{u.email}</p>
                   </div>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1">
                   <span className={`text-xs px-2 py-1 rounded-full ${
                     u.role === 'admin'
                       ? 'bg-amber-100 text-amber-700'
@@ -210,6 +280,16 @@ const Users = () => {
                   }`}>
                     {u.role}
                   </span>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => { setResetTarget(u); setResetDialogOpen(true); }}
+                    className="h-9 w-9 p-0 text-muted-foreground hover:text-foreground"
+                    data-testid={`reset-password-user-${idx}`}
+                    title="Reset password"
+                  >
+                    <Key size={18} />
+                  </Button>
                   {u._id !== currentUser?._id && (
                     <Button
                       variant="ghost"
