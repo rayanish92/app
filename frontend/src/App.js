@@ -11,6 +11,7 @@ import Consumers from './pages/Consumers';
 import Bills from './pages/Bills';
 import Payments from './pages/Payments';
 import SMS from './pages/SMS';
+import Users from './pages/Users';
 import './App.css';
 
 function App() {
@@ -33,6 +34,7 @@ function App() {
             <Route path="bills" element={<Bills />} />
             <Route path="payments" element={<Payments />} />
             <Route path="sms" element={<SMS />} />
+            <Route path="users" element={<Users />} />
           </Route>
         </Routes>
       </BrowserRouter>

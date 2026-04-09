@@ -2,7 +2,7 @@ import React from 'react';
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { Button } from '../components/ui/button';
-import { Drop, ChartLine, Users, FileText, CurrencyDollar, ChatCircleText, SignOut } from '@phosphor-icons/react';
+import { Drop, ChartLine, Users, FileText, CurrencyDollar, SignOut, UserCircle } from '@phosphor-icons/react';
 
 const MobileLayout = () => {
   const location = useLocation();
@@ -18,7 +18,8 @@ const MobileLayout = () => {
     { path: '/dashboard', label: 'Dashboard', icon: ChartLine },
     { path: '/consumers', label: 'Consumers', icon: Users },
     { path: '/bills', label: 'Bills', icon: FileText },
-    { path: '/payments', label: 'Payments', icon: CurrencyDollar }
+    { path: '/payments', label: 'Payments', icon: CurrencyDollar },
+    ...(user?.role === 'admin' ? [{ path: '/users', label: 'Users', icon: UserCircle }] : [])
   ];
 
   return (
@@ -56,7 +57,7 @@ const MobileLayout = () => {
 
       {/* Bottom Navigation */}
       <nav className="fixed bottom-0 left-0 right-0 bg-card border-t border-border safe-area-inset-bottom" style={{ zIndex: 99999 }} data-testid="bottom-nav">
-        <div className="grid grid-cols-4 h-16">
+        <div className={`grid h-16 ${user?.role === 'admin' ? 'grid-cols-5' : 'grid-cols-4'}`}>
           {navItems.map((item) => {
             const Icon = item.icon;
             const isActive = location.pathname === item.path;
