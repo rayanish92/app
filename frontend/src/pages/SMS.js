@@ -27,7 +27,7 @@ const SMS = () => {
       const { data } = await axios.get(`${API_URL}/api/consumers`, {
         withCredentials: true
       });
-      setConsumers(data);
+      setConsumers(data.items || data);
     } catch (error) {
       toast.error('Failed to fetch consumers');
     } finally {

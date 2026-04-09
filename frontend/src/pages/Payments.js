@@ -30,8 +30,10 @@ const Payments = () => {
         axios.get(`${API_URL}/api/payments`, { withCredentials: true }),
         axios.get(`${API_URL}/api/bills`, { withCredentials: true })
       ]);
-      setPayments(paymentsRes.data);
-      setBills(billsRes.data.filter(b => b.due > 0));
+      const paymentsItems = paymentsRes.data.items || paymentsRes.data;
+      const billsItems = billsRes.data.items || billsRes.data;
+      setPayments(paymentsItems);
+      setBills(billsItems.filter(b => b.due > 0));
     } catch (error) {
       toast.error('Failed to fetch data');
     } finally {

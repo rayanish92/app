@@ -33,8 +33,8 @@ const Bills = () => {
         axios.get(`${API_URL}/api/consumers`, { withCredentials: true }),
         axios.get(`${API_URL}/api/rate-config`, { withCredentials: true })
       ]);
-      setBills(billsRes.data);
-      setConsumers(consumersRes.data);
+      setBills(billsRes.data.items || billsRes.data);
+      setConsumers(consumersRes.data.items || consumersRes.data);
       setRateConfig(configRes.data);
     } catch (error) {
       toast.error('Failed to fetch data');

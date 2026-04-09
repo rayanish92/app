@@ -2,7 +2,7 @@ import os
 import jwt
 import bcrypt
 from datetime import datetime, timezone, timedelta
-from fastapi import HTTPException, Request, Depends
+from fastapi import HTTPException, Request
 from bson import ObjectId
 
 JWT_SECRET = os.environ.get('JWT_SECRET', 'your-secret-key-change-this')
