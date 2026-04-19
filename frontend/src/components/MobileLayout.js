@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { Button } from '../components/ui/button';
-import { Drop, ChartLine, Users, FileText, CurrencyDollar, SignOut, UserCircle, WifiSlash, ArrowsClockwise } from '@phosphor-icons/react';
+import { Drop, ChartLine, Users, FileText, CurrencyInr, SignOut, UserCircle, WifiSlash, ArrowsClockwise } from '@phosphor-icons/react';
 import { toast } from 'sonner';
 import axios from 'axios';
 import { getQueue, syncQueue } from '../lib/offlineQueue';
@@ -66,7 +66,7 @@ const MobileLayout = () => {
     { path: '/dashboard', label: 'Dashboard', icon: ChartLine },
     { path: '/consumers', label: 'Consumers', icon: Users },
     { path: '/bills', label: 'Bills', icon: FileText },
-    { path: '/payments', label: 'Payments', icon: CurrencyDollar },
+    { path: '/payments', label: 'Payments', icon: CurrencyInr },
     ...(user?.role === 'admin' ? [{ path: '/users', label: 'Users', icon: UserCircle }] : [])
   ];
 

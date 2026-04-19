@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { useAuth } from '../contexts/AuthContext';
-import { Drop, Users, FileText, CurrencyDollar, Warning } from '@phosphor-icons/react';
+import { Drop, Users, FileText, CurrencyInr, Warning } from '@phosphor-icons/react';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
 
@@ -54,7 +54,7 @@ const Dashboard = () => {
       id: 'amount',
       title: 'Total Amount',
       value: `₹${stats.total_amount.toFixed(0)}`,
-      icon: CurrencyDollar,
+      icon: CurrencyInr,
       color: 'bg-primary/10 text-primary',
       testId: 'total-amount-card'
     },
@@ -155,7 +155,7 @@ const Dashboard = () => {
             data-testid="quick-action-payments"
           >
             <div className="bg-primary/10 p-2 rounded-lg">
-              <CurrencyDollar size={22} className="text-primary" weight="duotone" />
+              <CurrencyInr size={22} className="text-primary" weight="duotone" />
             </div>
             <div className="flex-1">
               <h3 className="font-heading text-base font-light">Record Payments</h3>
