@@ -153,8 +153,8 @@ async def startup_event():
     await db.users.create_index('email', unique=True)
     await db.password_reset_tokens.create_index('expires_at', expireAfterSeconds=3600)
 
-    credentials_path = Path('/app/memory')
-    credentials_path.mkdir(exist_ok=True)
+    credentials_path = Path("./memory")
+    credentials_path.mkdir(parents=True, exist_ok=True)
     with open(credentials_path / 'test_credentials.md', 'w') as f:
         f.write(f'# Test Credentials\n\n## Admin Account\n- Email: {admin_email}\n- Password: {admin_password}\n- Role: admin\n\n## Endpoints\n- Login: POST /api/auth/login\n- Get current user: GET /api/auth/me\n- Logout: POST /api/auth/logout\n')
 
