@@ -32,8 +32,8 @@ app.state.db = db
 # CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], # This allows every website to connect
-    allow_credentials=True,
+    allow_origins=["https://water-management-frontend-bkqh.onrender.com"], # Your EXACT frontend URL
+    allow_credentials=True, # This MUST be True because the frontend is sending cookies
     allow_methods=["*"],
     allow_headers=["*"],
 )
