@@ -7,6 +7,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Plus, Trash, Pencil, Phone, MapPin, WhatsappLogo, DownloadSimple, ChatCircleDots } from '@phosphor-icons/react';
 import { toast } from 'sonner';
 import { exportToCSV, exportToPDF } from '../lib/exportUtils';
+import { TAX_CATEGORIES } from '../lib/constants';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
 
@@ -15,358 +16,125 @@ const Consumers = () => {
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingConsumer, setEditingConsumer] = useState(null);
-  const [formData, setFormData] = useState({
-    name: '',
-    phone: '',
-    address: '',
-    land_bigha: 0,
-    land_katha: 0
-  });
+  const [formData, setFormData] = useState({ name: '', phone: '', address: '', land_bigha: 0, land_katha: 0 });
 
   const fetchConsumers = useCallback(async () => {
     try {
-      const { data } = await axios.get(`${API_URL}/api/consumers`, {
-        withCredentials: true
-      });
+      const { data } = await axios.get(`${API_URL}/api/consumers`, { withCredentials: true });
       setConsumers(data.items || data);
-    } catch (error) {
-      toast.error('Failed to fetch consumers');
-    } finally {
-      setLoading(false);
-    }
+    } catch (error) { toast.error('Failed to fetch consumers'); }
+    finally { setLoading(false); }
   }, []);
 
-  useEffect(() => {
-    fetchConsumers();
-  }, [fetchConsumers]);
+  useEffect(() => { fetchConsumers(); }, [fetchConsumers]);
 
-  // --- NEW: Handle Normal SMS (Fast2SMS) ---
-  const handleSendSMS = async (consumer) => {
-    const loadingToast = toast.loading(`Sending SMS to ${consumer.name}...`);
+  const handleSendBillNotification = async (consumer, type) => {
+    const loadingToast = toast.loading(`Preparing notification for ${consumer.name}...`);
     try {
       const response = await axios.post(`${API_URL}/api/sms/send-bill`, {
         consumer_id: consumer.id,
         land_area: `${consumer.land_bigha} Bigha, ${consumer.land_katha} Katha`,
         amount: consumer.total_due,
-        period: "Current Dues"
+        period: "Current Dues",
+        category: "Boro chas tax" // Default or pull from rate-config
       }, { withCredentials: true });
 
-      if (response.data.sms_status === 'Success') {
-        toast.success(`Bilingual SMS sent to ${consumer.name}`, { id: loadingToast });
+      if (type === 'sms') {
+        if (response.data.sms_status === 'Success') toast.success("Bilingual SMS sent", { id: loadingToast });
+        else toast.error("SMS Failed", { id: loadingToast });
       } else {
-        toast.error(`SMS Failed: ${response.data.sms_response}`, { id: loadingToast });
-      }
-    } catch (error) {
-      toast.error('Failed to connect to SMS gateway', { id: loadingToast });
-    }
-  };
-
-  // --- UPDATED: Send WhatsApp using Backend Template ---
-  const sendWhatsApp = async (consumer) => {
-    try {
-      const response = await axios.post(`${API_URL}/api/sms/send-bill`, {
-        consumer_id: consumer.id,
-        land_area: `${consumer.land_bigha} Bigha, ${consumer.land_katha} Katha`,
-        amount: consumer.total_due,
-        period: "Current Dues"
-      }, { withCredentials: true });
-
-      if (response.data.whatsapp_url) {
         window.open(response.data.whatsapp_url, '_blank');
+        toast.dismiss(loadingToast);
       }
-    } catch (error) {
-      toast.error('Failed to generate WhatsApp link');
-    }
+    } catch (error) { toast.error("Gateway error", { id: loadingToast }); }
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
       if (editingConsumer) {
-        await axios.put(
-          `${API_URL}/api/consumers/${editingConsumer.id}`,
-          formData,
-          { withCredentials: true }
-        );
-        toast.success('Consumer updated');
+        await axios.put(`${API_URL}/api/consumers/${editingConsumer.id}`, formData, { withCredentials: true });
+        toast.success('Updated');
       } else {
-        await axios.post(`${API_URL}/api/consumers`, formData, {
-          withCredentials: true
-        });
-        toast.success('Consumer added');
+        await axios.post(`${API_URL}/api/consumers`, formData, { withCredentials: true });
+        toast.success('Added');
       }
-      setDialogOpen(false);
-      resetForm();
-      await fetchConsumers();
-    } catch (error) {
-      toast.error('Failed to save consumer');
-    }
+      setDialogOpen(false); resetForm(); await fetchConsumers();
+    } catch (error) { toast.error('Failed to save'); }
   };
 
   const handleDelete = async (id) => {
-    if (!window.confirm('Delete this consumer?')) return;
+    if (!window.confirm('Delete?')) return;
     try {
-      await axios.delete(`${API_URL}/api/consumers/${id}`, {
-        withCredentials: true
-      });
-      toast.success('Consumer deleted');
+      await axios.delete(`${API_URL}/api/consumers/${id}`, { withCredentials: true });
       await fetchConsumers();
-    } catch (error) {
-      toast.error('Failed to delete consumer');
-    }
+    } catch (error) { toast.error('Failed to delete'); }
   };
 
   const resetForm = () => {
-    setFormData({
-      name: '',
-      phone: '',
-      address: '',
-      land_bigha: 0,
-      land_katha: 0
-    });
+    setFormData({ name: '', phone: '', address: '', land_bigha: 0, land_katha: 0 });
     setEditingConsumer(null);
   };
 
   const openEditDialog = (consumer) => {
     setEditingConsumer(consumer);
-    setFormData({
-      name: consumer.name,
-      phone: consumer.phone,
-      address: consumer.address,
-      land_bigha: consumer.land_bigha,
-      land_katha: consumer.land_katha
-    });
+    setFormData({ name: consumer.name, phone: consumer.phone, address: consumer.address, land_bigha: consumer.land_bigha, land_katha: consumer.land_katha });
     setDialogOpen(true);
   };
 
   const handleExport = (format) => {
     const headers = ['Name', 'Phone', 'Address', 'Bigha', 'Katha', 'Total Due'];
     const rows = consumers.map(c => [c.name, c.phone, c.address, c.land_bigha, c.land_katha, c.total_due]);
-    if (format === 'csv') {
-      exportToCSV(rows, headers, 'consumers.csv');
-    } else {
-      exportToPDF(rows, headers, 'Consumers Report', 'consumers.pdf');
-    }
-    toast.success(`Exported as ${format.toUpperCase()}`);
+    format === 'csv' ? exportToCSV(rows, headers, 'consumers.csv') : exportToPDF(rows, headers, 'Consumers', 'consumers.pdf');
   };
 
-  if (loading) {
-    return <div className="flex justify-center p-8">Loading...</div>;
-  }
+  if (loading) return <div className="flex justify-center p-8">Loading...</div>;
 
   return (
-    <div className="space-y-4" data-testid="consumers-page">
+    <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <div>
-          <h1 className="font-heading text-3xl font-light tracking-tight text-foreground">
-            Consumers
-          </h1>
-          <p className="mt-1 text-sm text-muted-foreground">{consumers.length} total</p>
-        </div>
-        <div className="flex gap-2">
-          {consumers.length > 0 && (
-            <div className="flex gap-1">
-              <Button variant="outline" size="sm" onClick={() => handleExport('csv')} className="h-10 px-3 text-xs" data-testid="export-consumers-csv">
-                <DownloadSimple size={16} className="mr-1" /> CSV
-              </Button>
-              <Button variant="outline" size="sm" onClick={() => handleExport('pdf')} className="h-10 px-3 text-xs" data-testid="export-consumers-pdf">
-                <DownloadSimple size={16} className="mr-1" /> PDF
-              </Button>
-            </div>
-          )}
-          <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-            <DialogTrigger asChild>
-              <Button
-                onClick={() => {
-                  resetForm();
-                  setDialogOpen(true);
-                }}
-                className="bg-primary hover:bg-[#152B23] text-primary-foreground h-10 w-10 p-0 rounded-full"
-                data-testid="add-consumer-button"
-              >
-                <Plus size={24} weight="bold" />
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="max-w-[90vw] rounded-xl" data-testid="consumer-dialog">
-              <DialogHeader>
-                <DialogTitle className="font-heading text-xl font-light">
-                  {editingConsumer ? 'Edit Consumer' : 'Add Consumer'}
-                </DialogTitle>
-              </DialogHeader>
-              <form onSubmit={handleSubmit} className="space-y-3">
-                <div>
-                  <Label htmlFor="name" className="text-xs uppercase tracking-wider">Name</Label>
-                  <Input
-                    id="name"
-                    value={formData.name}
-                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                    required
-                    className="h-11"
-                    data-testid="consumer-name-input"
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="phone" className="text-xs uppercase tracking-wider">Phone</Label>
-                  <Input
-                    id="phone"
-                    value={formData.phone}
-                    onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                    required
-                    className="h-11"
-                    placeholder="10-digit number"
-                    data-testid="consumer-phone-input"
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="address" className="text-xs uppercase tracking-wider">Address</Label>
-                  <Input
-                    id="address"
-                    value={formData.address}
-                    onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-                    className="h-11"
-                    data-testid="consumer-address-input"
-                  />
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <Label htmlFor="land_bigha" className="text-xs uppercase tracking-wider">Bigha</Label>
-                    <Input
-                      id="land_bigha"
-                      type="number"
-                      step="0.01"
-                      value={formData.land_bigha}
-                      onChange={(e) => setFormData({ ...formData, land_bigha: parseFloat(e.target.value) || 0 })}
-                      className="h-11"
-                      data-testid="consumer-land-bigha-input"
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="land_katha" className="text-xs uppercase tracking-wider">Katha</Label>
-                    <Input
-                      id="land_katha"
-                      type="number"
-                      step="0.01"
-                      value={formData.land_katha}
-                      onChange={(e) => setFormData({ ...formData, land_katha: parseFloat(e.target.value) || 0 })}
-                      className="h-11"
-                      data-testid="consumer-land-katha-input"
-                    />
-                  </div>
-                </div>
-                <div className="flex gap-2 pt-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => {
-                      setDialogOpen(false);
-                      resetForm();
-                    }}
-                    className="flex-1 h-11"
-                    data-testid="consumer-cancel-button"
-                  >
-                    Cancel
-                  </Button>
-                  <Button
-                    type="submit"
-                    className="flex-1 h-11 bg-primary hover:bg-[#152B23]"
-                    data-testid="consumer-submit-button"
-                  >
-                    {editingConsumer ? 'Update' : 'Add'}
-                  </Button>
-                </div>
-              </form>
-            </DialogContent>
-          </Dialog>
-        </div>
+        <h1 className="text-3xl font-light">Consumers</h1>
+        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+          <DialogTrigger asChild><Button className="rounded-full h-10 w-10 p-0"><Plus size={24} /></Button></DialogTrigger>
+          <DialogContent className="rounded-xl">
+            <DialogHeader><DialogTitle>{editingConsumer ? 'Edit' : 'Add'} Consumer</DialogTitle></DialogHeader>
+            <form onSubmit={handleSubmit} className="space-y-3">
+              <Input placeholder="Name" value={formData.name} onChange={(e) => setFormData({...formData, name: e.target.value})} required />
+              <Input placeholder="Phone" value={formData.phone} onChange={(e) => setFormData({...formData, phone: e.target.value})} required />
+              <Input placeholder="Address" value={formData.address} onChange={(e) => setFormData({...formData, address: e.target.value})} />
+              <div className="grid grid-cols-2 gap-3">
+                <Input type="number" placeholder="Bigha" value={formData.land_bigha} onChange={(e) => setFormData({...formData, land_bigha: parseFloat(e.target.value)})} />
+                <Input type="number" placeholder="Katha" value={formData.land_katha} onChange={(e) => setFormData({...formData, land_katha: parseFloat(e.target.value)})} />
+              </div>
+              <Button type="submit" className="w-full">Save</Button>
+            </form>
+          </DialogContent>
+        </Dialog>
       </div>
 
-      {consumers.length === 0 ? (
-        <div className="text-center py-12 bg-card border border-border rounded-xl">
-          <p className="text-muted-foreground text-sm">No consumers yet</p>
-        </div>
-      ) : (
-        <div className="space-y-3">
-          {consumers.map((consumer, idx) => (
-            <div
-              key={consumer.id}
-              className="bg-card border border-border p-4 rounded-xl"
-              data-testid={`consumer-row-${idx}`}
-            >
-              <div className="flex items-start justify-between mb-3">
-                <div className="flex-1">
-                  <h3 className="font-heading text-lg font-light">{consumer.name}</h3>
-                  <div className="flex items-center gap-1 text-sm text-muted-foreground mt-1">
-                    <Phone size={14} />
-                    <span>{consumer.phone}</span>
-                  </div>
-                  {consumer.address && (
-                    <div className="flex items-center gap-1 text-sm text-muted-foreground mt-1">
-                      <MapPin size={14} />
-                      <span>{consumer.address}</span>
-                    </div>
-                  )}
-                </div>
-                <div className="flex gap-2">
-                  {/* --- NEW: Dedicated SMS Button --- */}
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => handleSendSMS(consumer)}
-                    className="h-9 w-9 p-0 text-blue-600 hover:text-blue-700 hover:bg-blue-50"
-                    title="Send Normal SMS"
-                  >
-                    <ChatCircleDots size={20} weight="fill" />
-                  </Button>
-
-                  {/* --- WhatsApp Button --- */}
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => sendWhatsApp(consumer)}
-                    className="h-9 w-9 p-0 text-green-600 hover:text-green-700 hover:bg-green-50"
-                    data-testid={`whatsapp-consumer-${idx}`}
-                  >
-                    <WhatsappLogo size={20} weight="fill" />
-                  </Button>
-
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => openEditDialog(consumer)}
-                    className="h-9 w-9 p-0"
-                    data-testid={`edit-consumer-${idx}`}
-                  >
-                    <Pencil size={18} />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => handleDelete(consumer.id)}
-                    className="h-9 w-9 p-0 text-destructive hover:text-destructive"
-                    data-testid={`delete-consumer-${idx}`}
-                  >
-                    <Trash size={18} />
-                  </Button>
-                </div>
+      <div className="space-y-3">
+        {consumers.map((consumer, idx) => (
+          <div key={consumer.id} className="bg-card border p-4 rounded-xl shadow-sm">
+            <div className="flex justify-between items-start">
+              <div>
+                <h3 className="text-lg font-medium">{consumer.name}</h3>
+                <p className="text-sm text-muted-foreground flex items-center gap-1"><Phone size={14}/> {consumer.phone}</p>
               </div>
-              <div className="grid grid-cols-3 gap-2 pt-3 border-t border-border">
-                <div>
-                  <p className="text-xs text-muted-foreground">Bigha</p>
-                  <p className="font-medium">{consumer.land_bigha}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground">Katha</p>
-                  <p className="font-medium">{consumer.land_katha}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground">Due</p>
-                  <p className="font-medium text-destructive">₹{consumer.total_due.toFixed(0)}</p>
-                </div>
+              <div className="flex gap-2">
+                <Button variant="ghost" size="sm" onClick={() => handleSendBillNotification(consumer, 'sms')} className="text-blue-600"><ChatCircleDots size={20} weight="fill"/></Button>
+                <Button variant="ghost" size="sm" onClick={() => handleSendBillNotification(consumer, 'whatsapp')} className="text-green-600"><WhatsappLogo size={20} weight="fill"/></Button>
+                <Button variant="ghost" size="sm" onClick={() => openEditDialog(consumer)}><Pencil size={18}/></Button>
+                <Button variant="ghost" size="sm" onClick={() => handleDelete(consumer.id)} className="text-destructive"><Trash size={18}/></Button>
               </div>
             </div>
-          ))}
-        </div>
-      )}
+            <div className="grid grid-cols-3 gap-2 mt-3 pt-3 border-t text-sm">
+              <div><p className="text-muted-foreground">Bigha</p><p>{consumer.land_bigha}</p></div>
+              <div><p className="text-muted-foreground">Katha</p><p>{consumer.land_katha}</p></div>
+              <div><p className="text-muted-foreground">Due</p><p className="text-destructive font-bold">₹{consumer.total_due.toFixed(0)}</p></div>
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 };
