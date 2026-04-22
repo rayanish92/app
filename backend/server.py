@@ -1,7 +1,5 @@
 from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
 from motor.motor_asyncio import AsyncIOMotorClient
 from dotenv import load_dotenv
 from pathlib import Path
@@ -12,15 +10,13 @@ from datetime import datetime, timezone
 from pydantic import BaseModel
 from typing import Optional, List
 
-# 1. SETUP LOGGING
+# 1. SETUP
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
-# 2. LOAD ENVIRONMENT
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
-# 3. DEFINE MODELS
+# 2. MODELS (Defined at top to prevent NameErrors)
 class RateConfigUpdate(BaseModel):
     rate_per_bigha: float
     katha_to_bigha_ratio: float
@@ -33,26 +29,16 @@ class BillSMSRequest(BaseModel):
     period: str       
     category: str 
 
-# 4. DATABASE CONNECTION
+# 3. DATABASE
 MONGO_URL = os.environ.get('MONGO_URL')
 DB_NAME = os.environ.get('DB_NAME', 'water_bill_tracker')
-
 client = AsyncIOMotorClient(MONGO_URL)
 db = client[DB_NAME]
 
 app = FastAPI(title="Water Tracker API")
 app.state.db = db
 
-# --- 422 ERROR LOGGER ---
-@app.exception_handler(RequestValidationError)
-async def validation_exception_handler(request: Request, exc: RequestValidationError):
-    logger.error(f"422 Validation Error: {exc.errors()}")
-    return JSONResponse(
-        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-        content={"detail": exc.errors()},
-    )
-
-# 5. CORS
+# 4. CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["https://water-management-frontend-bkqh.onrender.com"], 
@@ -61,7 +47,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 6. ROUTER IMPORTS
+# 5. ROUTERS
 from routes.auth import router as auth_router
 from routes.consumers import router as consumers_router
 from routes.bills import router as bills_router
@@ -75,20 +61,7 @@ app.include_router(bills_router, prefix="/api")
 app.include_router(payments_router, prefix="/api")
 app.include_router(export_router, prefix="/api")
 
-# 7. HELPERS
-def generate_bill_templates(name, area, amount, period, category):
-    cat_map = {
-        "boro chas tax": "বোরো চাষ ট্যাক্স",
-        "boro seed water tax": "বোরো বীজ জল ট্যাক্স",
-        "potato water tax": "আলু জল ট্যাক্স",
-        "mustard water tax": "সরষে জল ট্যাক্স",
-        "others water tax": "অন্যান্য জল ট্যাক্স"
-    }
-    bengali_cat = cat_map.get(category.lower(), category)
-    return f"নমস্কার {name}, বিল।\nবিভাগ: {bengali_cat}\nসময়কাল: {period}\nজমির পরিমাণ: {area}\nবকেয়া: {amount} টাকা।"
-
-# --- ENDPOINTS ---
-
+# 6. ENDPOINTS
 @app.get("/health")
 async def health():
     return {"status": "ok"}
@@ -103,11 +76,7 @@ async def get_rate_config(request: Request):
 @app.put('/api/rate-config')
 async def update_rate_config(config: RateConfigUpdate, request: Request):
     await get_current_user(request, db)
-    await db.rate_config.update_one(
-        {}, 
-        {'$set': config.model_dump()}, 
-        upsert=True
-    )
+    await db.rate_config.update_one({}, {'$set': config.model_dump()}, upsert=True)
     return config.model_dump()
 
 @app.post('/api/sms/send-bill')
@@ -116,7 +85,8 @@ async def send_bill_notification(sms: BillSMSRequest, request: Request):
     consumer = await db.consumers.find_one({'id': sms.consumer_id})
     if not consumer: raise HTTPException(status_code=404)
     
-    msg = generate_bill_templates(consumer['name'], sms.land_area, sms.amount, sms.period, sms.category)
+    # Simple Bilingual Logic
+    msg = f"নমস্কার {consumer['name']}, বিল বিভাগ: {sms.category}\nপরিমাণ: {sms.amount} টাকা।"
     api_key = os.environ.get('FAST2SMS_API_KEY')
     whatsapp_url = f"https://wa.me/91{consumer['phone']}?text={requests.utils.quote(msg)}"
     
@@ -125,20 +95,8 @@ async def send_bill_notification(sms: BillSMSRequest, request: Request):
             json={"route": "q", "message": msg, "language": "unicode", "numbers": consumer['phone']},
             headers={"authorization": api_key, "Content-Type": "application/json"}, timeout=10)
     
-    return {'sms_status': 'Processed', 'whatsapp_url': whatsapp_url}
-
-@app.get('/api/dashboard/stats')
-async def get_dashboard_stats(request: Request):
-    await get_current_user(request, db)
-    total_consumers = await db.consumers.count_documents({})
-    bill_totals = await db.bills.aggregate([{'$group': {'_id': None, 'total_amount': {'$sum': '$amount'}, 'total_paid': {'$sum': '$paid'}, 'total_due': {'$sum': '$due'}}}]).to_list(1)
-    totals = bill_totals[0] if bill_totals else {'total_amount': 0, 'total_paid': 0, 'total_due': 0}
-    return {'total_consumers': total_consumers, 'total_amount': round(totals['total_amount'], 2), 'total_paid': round(totals['total_paid'], 2), 'total_due': round(totals['total_due'], 2)}
+    return {'sms_status': 'Success', 'whatsapp_url': whatsapp_url}
 
 @app.on_event('startup')
 async def startup():
     await db.users.create_index('email', unique=True)
-
-@app.on_event('shutdown')
-async def shutdown():
-    client.close()
