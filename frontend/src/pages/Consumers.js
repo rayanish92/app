@@ -4,7 +4,7 @@ import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '../components/ui/dialog';
-import { Plus, Trash, Pencil, Phone, MapPin, WhatsappLogo, DownloadSimple } from '@phosphor-icons/react';
+import { Plus, Trash, Pencil, Phone, MapPin, WhatsappLogo, DownloadSimple, ChatCircleDots } from '@phosphor-icons/react';
 import { toast } from 'sonner';
 import { exportToCSV, exportToPDF } from '../lib/exportUtils';
 
@@ -39,6 +39,45 @@ const Consumers = () => {
   useEffect(() => {
     fetchConsumers();
   }, [fetchConsumers]);
+
+  // --- NEW: Handle Normal SMS (Fast2SMS) ---
+  const handleSendSMS = async (consumer) => {
+    const loadingToast = toast.loading(`Sending SMS to ${consumer.name}...`);
+    try {
+      const response = await axios.post(`${API_URL}/api/sms/send-bill`, {
+        consumer_id: consumer.id,
+        land_area: `${consumer.land_bigha} Bigha, ${consumer.land_katha} Katha`,
+        amount: consumer.total_due,
+        period: "Current Dues"
+      }, { withCredentials: true });
+
+      if (response.data.sms_status === 'Success') {
+        toast.success(`Bilingual SMS sent to ${consumer.name}`, { id: loadingToast });
+      } else {
+        toast.error(`SMS Failed: ${response.data.sms_response}`, { id: loadingToast });
+      }
+    } catch (error) {
+      toast.error('Failed to connect to SMS gateway', { id: loadingToast });
+    }
+  };
+
+  // --- UPDATED: Send WhatsApp using Backend Template ---
+  const sendWhatsApp = async (consumer) => {
+    try {
+      const response = await axios.post(`${API_URL}/api/sms/send-bill`, {
+        consumer_id: consumer.id,
+        land_area: `${consumer.land_bigha} Bigha, ${consumer.land_katha} Katha`,
+        amount: consumer.total_due,
+        period: "Current Dues"
+      }, { withCredentials: true });
+
+      if (response.data.whatsapp_url) {
+        window.open(response.data.whatsapp_url, '_blank');
+      }
+    } catch (error) {
+      toast.error('Failed to generate WhatsApp link');
+    }
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -100,12 +139,6 @@ const Consumers = () => {
     setDialogOpen(true);
   };
 
-  const sendWhatsApp = (consumer) => {
-    const message = `নমস্কার ${consumer.name},\n\nআপনার জলের বিল বিবরণ:\nমোট বকেয়া: ₹${consumer.total_due.toFixed(0)}\n\nদয়া করে যত তাড়াতাড়ি সম্ভব পরিশোধ করুন।\n\nধন্যবাদ!\n\n---\n\nHello ${consumer.name},\n\nYour water bill details:\nTotal Due: ₹${consumer.total_due.toFixed(0)}\n\nPlease pay at your earliest convenience.\n\nThank you!`;
-    const whatsappUrl = `https://wa.me/91${consumer.phone}?text=${encodeURIComponent(message)}`;
-    window.open(whatsappUrl, '_blank');
-  };
-
   const handleExport = (format) => {
     const headers = ['Name', 'Phone', 'Address', 'Bigha', 'Katha', 'Total Due'];
     const rows = consumers.map(c => [c.name, c.phone, c.address, c.land_bigha, c.land_katha, c.total_due]);
@@ -141,109 +174,109 @@ const Consumers = () => {
               </Button>
             </div>
           )}
-        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-          <DialogTrigger asChild>
-            <Button
-              onClick={() => {
-                resetForm();
-                setDialogOpen(true);
-              }}
-              className="bg-primary hover:bg-[#152B23] text-primary-foreground h-10 w-10 p-0 rounded-full"
-              data-testid="add-consumer-button"
-            >
-              <Plus size={24} weight="bold" />
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="max-w-[90vw] rounded-xl" data-testid="consumer-dialog">
-            <DialogHeader>
-              <DialogTitle className="font-heading text-xl font-light">
-                {editingConsumer ? 'Edit Consumer' : 'Add Consumer'}
-              </DialogTitle>
-            </DialogHeader>
-            <form onSubmit={handleSubmit} className="space-y-3">
-              <div>
-                <Label htmlFor="name" className="text-xs uppercase tracking-wider">Name</Label>
-                <Input
-                  id="name"
-                  value={formData.name}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  required
-                  className="h-11"
-                  data-testid="consumer-name-input"
-                />
-              </div>
-              <div>
-                <Label htmlFor="phone" className="text-xs uppercase tracking-wider">Phone</Label>
-                <Input
-                  id="phone"
-                  value={formData.phone}
-                  onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                  required
-                  className="h-11"
-                  placeholder="10-digit number"
-                  data-testid="consumer-phone-input"
-                />
-              </div>
-              <div>
-                <Label htmlFor="address" className="text-xs uppercase tracking-wider">Address</Label>
-                <Input
-                  id="address"
-                  value={formData.address}
-                  onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-                  className="h-11"
-                  data-testid="consumer-address-input"
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-3">
+          <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+            <DialogTrigger asChild>
+              <Button
+                onClick={() => {
+                  resetForm();
+                  setDialogOpen(true);
+                }}
+                className="bg-primary hover:bg-[#152B23] text-primary-foreground h-10 w-10 p-0 rounded-full"
+                data-testid="add-consumer-button"
+              >
+                <Plus size={24} weight="bold" />
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-[90vw] rounded-xl" data-testid="consumer-dialog">
+              <DialogHeader>
+                <DialogTitle className="font-heading text-xl font-light">
+                  {editingConsumer ? 'Edit Consumer' : 'Add Consumer'}
+                </DialogTitle>
+              </DialogHeader>
+              <form onSubmit={handleSubmit} className="space-y-3">
                 <div>
-                  <Label htmlFor="land_bigha" className="text-xs uppercase tracking-wider">Bigha</Label>
+                  <Label htmlFor="name" className="text-xs uppercase tracking-wider">Name</Label>
                   <Input
-                    id="land_bigha"
-                    type="number"
-                    step="0.01"
-                    value={formData.land_bigha}
-                    onChange={(e) => setFormData({ ...formData, land_bigha: parseFloat(e.target.value) || 0 })}
+                    id="name"
+                    value={formData.name}
+                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                    required
                     className="h-11"
-                    data-testid="consumer-land-bigha-input"
+                    data-testid="consumer-name-input"
                   />
                 </div>
                 <div>
-                  <Label htmlFor="land_katha" className="text-xs uppercase tracking-wider">Katha</Label>
+                  <Label htmlFor="phone" className="text-xs uppercase tracking-wider">Phone</Label>
                   <Input
-                    id="land_katha"
-                    type="number"
-                    step="0.01"
-                    value={formData.land_katha}
-                    onChange={(e) => setFormData({ ...formData, land_katha: parseFloat(e.target.value) || 0 })}
+                    id="phone"
+                    value={formData.phone}
+                    onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                    required
                     className="h-11"
-                    data-testid="consumer-land-katha-input"
+                    placeholder="10-digit number"
+                    data-testid="consumer-phone-input"
                   />
                 </div>
-              </div>
-              <div className="flex gap-2 pt-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => {
-                    setDialogOpen(false);
-                    resetForm();
-                  }}
-                  className="flex-1 h-11"
-                  data-testid="consumer-cancel-button"
-                >
-                  Cancel
-                </Button>
-                <Button
-                  type="submit"
-                  className="flex-1 h-11 bg-primary hover:bg-[#152B23]"
-                  data-testid="consumer-submit-button"
-                >
-                  {editingConsumer ? 'Update' : 'Add'}
-                </Button>
-              </div>
-            </form>
-          </DialogContent>
-        </Dialog>
+                <div>
+                  <Label htmlFor="address" className="text-xs uppercase tracking-wider">Address</Label>
+                  <Input
+                    id="address"
+                    value={formData.address}
+                    onChange={(e) => setFormData({ ...formData, address: e.target.value })}
+                    className="h-11"
+                    data-testid="consumer-address-input"
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <Label htmlFor="land_bigha" className="text-xs uppercase tracking-wider">Bigha</Label>
+                    <Input
+                      id="land_bigha"
+                      type="number"
+                      step="0.01"
+                      value={formData.land_bigha}
+                      onChange={(e) => setFormData({ ...formData, land_bigha: parseFloat(e.target.value) || 0 })}
+                      className="h-11"
+                      data-testid="consumer-land-bigha-input"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="land_katha" className="text-xs uppercase tracking-wider">Katha</Label>
+                    <Input
+                      id="land_katha"
+                      type="number"
+                      step="0.01"
+                      value={formData.land_katha}
+                      onChange={(e) => setFormData({ ...formData, land_katha: parseFloat(e.target.value) || 0 })}
+                      className="h-11"
+                      data-testid="consumer-land-katha-input"
+                    />
+                  </div>
+                </div>
+                <div className="flex gap-2 pt-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => {
+                      setDialogOpen(false);
+                      resetForm();
+                    }}
+                    className="flex-1 h-11"
+                    data-testid="consumer-cancel-button"
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    type="submit"
+                    className="flex-1 h-11 bg-primary hover:bg-[#152B23]"
+                    data-testid="consumer-submit-button"
+                  >
+                    {editingConsumer ? 'Update' : 'Add'}
+                  </Button>
+                </div>
+              </form>
+            </DialogContent>
+          </Dialog>
         </div>
       </div>
 
@@ -274,15 +307,28 @@ const Consumers = () => {
                   )}
                 </div>
                 <div className="flex gap-2">
+                  {/* --- NEW: Dedicated SMS Button --- */}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => handleSendSMS(consumer)}
+                    className="h-9 w-9 p-0 text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                    title="Send Normal SMS"
+                  >
+                    <ChatCircleDots size={20} weight="fill" />
+                  </Button>
+
+                  {/* --- WhatsApp Button --- */}
                   <Button
                     variant="ghost"
                     size="sm"
                     onClick={() => sendWhatsApp(consumer)}
-                    className="h-9 w-9 p-0 text-green-600 hover:text-green-600"
+                    className="h-9 w-9 p-0 text-green-600 hover:text-green-700 hover:bg-green-50"
                     data-testid={`whatsapp-consumer-${idx}`}
                   >
                     <WhatsappLogo size={20} weight="fill" />
                   </Button>
+
                   <Button
                     variant="ghost"
                     size="sm"
