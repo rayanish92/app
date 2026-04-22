@@ -45,12 +45,12 @@ async def login(login_req: LoginRequest, response: Response, request: Request):
 
     response.set_cookie(
         key='access_token', value=access_token,
-        httponly=True, secure=False, samesite='lax',
+        httponly=True, secure=True, samesite='none',
         max_age=3600, path='/'
     )
     response.set_cookie(
         key='refresh_token', value=refresh_token,
-        httponly=True, secure=False, samesite='lax',
+        httponly=True, secure=True, samesite='none',
         max_age=604800, path='/'
     )
 
