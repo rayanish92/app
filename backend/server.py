@@ -5,6 +5,7 @@ from dotenv import load_dotenv
 from pathlib import Path
 import os
 import logging
+import requests
 from datetime import datetime, timezone
 from pydantic import BaseModel
 from typing import Optional
@@ -32,21 +33,19 @@ app.state.db = db
 # CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://water-management-frontend-bkqh.onrender.com"], # Your EXACT frontend URL
-    allow_credentials=True, # This MUST be True because the frontend is sending cookies
+    allow_origins=["https://water-management-frontend-bkqh.onrender.com"],
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Include modular routers
 app.include_router(auth_router, prefix="/api")
 app.include_router(consumers_router, prefix="/api")
 app.include_router(bills_router, prefix="/api")
 app.include_router(payments_router, prefix="/api")
 app.include_router(export_router, prefix="/api")
 
-# --- Rate Config (kept here as a small global endpoint) ---
-
+# --- Rate Config ---
 class RateConfigUpdate(BaseModel):
     rate_per_bigha: float
     katha_to_bigha_ratio: float
@@ -74,21 +73,62 @@ async def update_rate_config(config: RateConfigUpdate, request: Request):
 
 class SMSRequest(BaseModel):
     consumer_id: str
-    message: str
+    message: str  # Can accept Bengali or English text
 
 @app.post('/api/sms/send')
 async def send_sms(sms: SMSRequest, request: Request):
     await get_current_user(request, db)
     consumer = await db.consumers.find_one({'id': sms.consumer_id}, {'_id': 0})
+    
     if not consumer:
         raise HTTPException(status_code=404, detail='Consumer not found')
 
-    logging.info(f"SMS to {consumer['phone']}: {sms.message}")
-    return {
-        'message': 'SMS logged (use WhatsApp deep-link on frontend)',
-        'phone': consumer['phone'],
-        'text': sms.message
+    phone = consumer.get('phone')
+    api_key = os.environ.get('FAST2SMS_API_KEY')
+
+    if not api_key:
+        logging.error("FAST2SMS_API_KEY is missing in environment variables")
+        # Fallback to just logging if no API key is found
+        return {
+            'message': 'SMS key missing, but WhatsApp link generated',
+            'phone': phone,
+            'text': sms.message,
+            'whatsapp_url': f"https://wa.me/91{phone}?text={requests.utils.quote(sms.message)}"
+        }
+
+    # Fast2SMS Bulk V2 API Configuration
+    url = "https://www.fast2sms.com/dev/bulkV2"
+    
+    # We use route 'q' (Quick SMS). For Bengali (Unicode), 
+    # Fast2SMS handles unicode characters in the message string automatically.
+    payload = {
+        "route": "q",
+        "message": sms.message,
+        "language": "unicode", # Required for Bengali characters
+        "numbers": phone,
     }
+    
+    headers = {
+        "authorization": api_key,
+        "Content-Type": "application/json"
+    }
+
+    try:
+        response = requests.post(url, json=payload, headers=headers)
+        result = response.json()
+        
+        logging.info(f"Fast2SMS Response for {phone}: {result}")
+
+        return {
+            'sms_status': 'Success' if result.get('return') else 'Failed',
+            'sms_detail': result.get('message', []),
+            'whatsapp_url': f"https://wa.me/91{phone}?text={requests.utils.quote(sms.message)}",
+            'phone': phone,
+            'text': sms.message
+        }
+    except Exception as e:
+        logging.error(f"SMS Sending Error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to reach SMS gateway")
 
 # --- Dashboard stats ---
 
@@ -118,7 +158,6 @@ async def get_dashboard_stats(request: Request):
     }
 
 # --- Logging ---
-
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
@@ -126,7 +165,6 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # --- Startup / Shutdown ---
-
 @app.on_event('startup')
 async def startup_event():
     admin_email = os.environ.get('ADMIN_EMAIL', 'admin@waterbill.com')
