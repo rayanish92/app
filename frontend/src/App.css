@@ -1,3 +1,10 @@
-.App {
-  min-height: 100vh;
+/* FORCE HIDE EMERGENT BRANDING */
+div[class*="Emergent"], 
+div[class*="emergent"], 
+#emergent-badge,
+.made-with-emergent-popup {
+    display: none !important;
+    visibility: hidden !important;
+    pointer-events: none !important;
+    opacity: 0 !important;
 }
