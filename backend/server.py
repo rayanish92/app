@@ -10,16 +10,19 @@ from datetime import datetime, timezone
 from pydantic import BaseModel
 from typing import Optional
 
-# 1. Load Environment
+# 1. SETUP LOGGING
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# 2. LOAD ENVIRONMENT
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
-# 2. Models with Category Support
+# 3. DEFINE MODELS (At the top to avoid NameError)
 class RateConfigUpdate(BaseModel):
-    category: str
     rate_per_bigha: float
     katha_to_bigha_ratio: float
-     
+    category: str 
 
 class BillSMSRequest(BaseModel):
     consumer_id: str
@@ -28,23 +31,25 @@ class BillSMSRequest(BaseModel):
     period: str       
     category: str 
 
-# 3. Modular Router Imports
-from routes.auth import router as auth_router
-from routes.consumers import router as consumers_router
-from routes.bills import router as bills_router
-from routes.payments import router as payments_router
-from routes.export import router as export_router
-from utils.auth import hash_password, verify_password, get_current_user
+class SMSRequest(BaseModel):
+    consumer_id: str
+    message: str
 
-# 4. Database Connection
-mongo_url = os.environ['MONGO_URL']
-client = AsyncIOMotorClient(mongo_url)
-db = client[os.environ['DB_NAME']]
+# 4. DATABASE CONNECTION
+# We get these from Render Environment Variables
+MONGO_URL = os.environ.get('MONGO_URL')
+DB_NAME = os.environ.get('DB_NAME', 'water_billing')
+
+if not MONGO_URL:
+    logger.error("CRITICAL: MONGO_URL not found in environment!")
+
+client = AsyncIOMotorClient(MONGO_URL)
+db = client[DB_NAME]
 
 app = FastAPI(title="Water Tracker API")
 app.state.db = db
 
-# 5. CORS Middleware
+# 5. CORS CONFIGURATION
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["https://water-management-frontend-bkqh.onrender.com"], 
@@ -53,17 +58,19 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 6. Bilingual Template Logic
+# 6. BILINGUAL SMS TEMPLATE LOGIC
 def generate_bill_templates(name, area, amount, period, category):
-    # Map English internal values to Bengali display text
+    # Mapping dropdown values to Bengali
     cat_map = {
-        "boro chas tax": "বোরো চাষ ট্যাক্স",
-        "boro seed water tax": "বোরো বীজ জল ট্যাক্স",
-        "potato water tax": "আলু জল ট্যাক্স",
-        "mustard water tax": "সরষে জল ট্যাক্স",
-        "others water tax": "অন্যান্য জল ট্যাক্স"
+        "Boro chas tax": "বোরো চাষ ট্যাক্স",
+        "Boro seed water tax": "বোরো বীজ জল ট্যাক্স",
+        "Potato water tax": "আলু জল ট্যাক্স",
+        "Mustard water tax": "সরষে জল ট্যাক্স",
+        "Others water tax": "অন্যান্য জল ট্যাক্স"
     }
-    bengali_cat = cat_map.get(category.lower(), category)
+    # Safety check for category
+    clean_cat = category.lower() if category else "others water tax"
+    bengali_cat = cat_map.get(clean_cat, clean_cat)
 
     bengali_text = (
         f"নমস্কার {name}, আপনার জলের বিল।\n"
@@ -76,7 +83,7 @@ def generate_bill_templates(name, area, amount, period, category):
     
     english_text = (
         f"Hello {name}, your water bill.\n"
-        f"Category: {category.title()}\n"
+        f"Category: {clean_cat.title()}\n"
         f"Period: {period}\n"
         f"Land Area: {area}\n"
         f"Bill Amount: Rs. {amount}.\n"
@@ -85,15 +92,27 @@ def generate_bill_templates(name, area, amount, period, category):
     
     return f"{bengali_text}\n\n---\n\n{english_text}"
 
-# 7. Include Routers
+# 7. ROUTER IMPORTS (After Models are defined)
+from routes.auth import router as auth_router
+from routes.consumers import router as consumers_router
+from routes.bills import router as bills_router
+from routes.payments import router as payments_router
+from routes.export import router as export_router
+from utils.auth import hash_password, verify_password, get_current_user
+
 app.include_router(auth_router, prefix="/api")
 app.include_router(consumers_router, prefix="/api")
 app.include_router(bills_router, prefix="/api")
 app.include_router(payments_router, prefix="/api")
 app.include_router(export_router, prefix="/api")
 
-# --- Endpoints ---
+# --- PUBLIC HEALTH CHECK (To prevent Render Timeout) ---
+@app.get("/")
+@app.get("/health")
+async def health_check():
+    return {"status": "healthy", "timestamp": datetime.now(timezone.utc)}
 
+# --- RATE CONFIG ---
 @app.get('/api/rate-config')
 async def get_rate_config(request: Request):
     await get_current_user(request, db)
@@ -112,6 +131,7 @@ async def update_rate_config(config: RateConfigUpdate, request: Request):
     await db.rate_config.insert_one(config_dict)
     return config_dict
 
+# --- BILINGUAL SMS SENDING ---
 @app.post('/api/sms/send-bill')
 async def send_bill_notification(sms: BillSMSRequest, request: Request):
     await get_current_user(request, db)
@@ -120,7 +140,14 @@ async def send_bill_notification(sms: BillSMSRequest, request: Request):
         raise HTTPException(status_code=404, detail='Consumer not found')
     
     phone = consumer.get('phone')
-    full_message = generate_bill_templates(consumer['name'], sms.land_area, sms.amount, sms.period, sms.category)
+    full_message = generate_bill_templates(
+        consumer.get('name', 'Farmer'), 
+        sms.land_area, 
+        sms.amount, 
+        sms.period, 
+        sms.category
+    )
+    
     api_key = os.environ.get('FAST2SMS_API_KEY')
     whatsapp_url = f"https://wa.me/91{phone}?text={requests.utils.quote(full_message)}"
     
@@ -131,12 +158,15 @@ async def send_bill_notification(sms: BillSMSRequest, request: Request):
         response = requests.post(
             "https://www.fast2sms.com/dev/bulkV2",
             json={"route": "q", "message": full_message, "language": "unicode", "numbers": phone},
-            headers={"authorization": api_key, "Content-Type": "application/json"}
+            headers={"authorization": api_key, "Content-Type": "application/json"},
+            timeout=10 # Prevent hanging
         )
         return {'sms_status': 'Success' if response.json().get('return') else 'Failed', 'whatsapp_url': whatsapp_url}
     except Exception as e:
+        logger.error(f"SMS error: {e}")
         return {'sms_status': 'Error', 'whatsapp_url': whatsapp_url, 'error': str(e)}
 
+# --- DASHBOARD STATS ---
 @app.get('/api/dashboard/stats')
 async def get_dashboard_stats(request: Request):
     await get_current_user(request, db)
@@ -145,17 +175,26 @@ async def get_dashboard_stats(request: Request):
     totals = bill_totals[0] if bill_totals else {'total_amount': 0, 'total_paid': 0, 'total_due': 0}
     return {'total_consumers': total_consumers, 'total_amount': round(totals['total_amount'], 2), 'total_paid': round(totals['total_paid'], 2), 'total_due': round(totals['total_due'], 2)}
 
-# --- Startup ---
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
+# --- STARTUP EVENT ---
 @app.on_event('startup')
 async def startup_event():
+    logger.info("Application is starting up...")
     admin_email = os.environ.get('ADMIN_EMAIL', 'admin@waterbill.com')
     admin_password = os.environ.get('ADMIN_PASSWORD', 'admin123')
-    if not await db.users.find_one({'email': admin_email}):
-        await db.users.insert_one({'email': admin_email, 'password_hash': hash_password(admin_password), 'name': 'Admin', 'role': 'admin', 'created_at': datetime.now(timezone.utc).isoformat()})
-    await db.users.create_index('email', unique=True)
+    
+    try:
+        if not await db.users.find_one({'email': admin_email}):
+            await db.users.insert_one({
+                'email': admin_email, 
+                'password_hash': hash_password(admin_password), 
+                'name': 'Admin', 
+                'role': 'admin', 
+                'created_at': datetime.now(timezone.utc).isoformat()
+            })
+            logger.info("Default Admin created.")
+        await db.users.create_index('email', unique=True)
+    except Exception as e:
+        logger.error(f"Startup DB Error: {e}")
 
 @app.on_event('shutdown')
 async def shutdown_db_client():
