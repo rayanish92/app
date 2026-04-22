@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Plus, Calendar, Pencil, Trash, DownloadSimple } from '@phosphor-icons/react';
 import { toast } from 'sonner';
 import { exportToCSV, exportToPDF } from '../lib/exportUtils';
+import { TAX_CATEGORIES } from '../lib/constants'; // Import shared constants
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
 
@@ -22,6 +23,7 @@ const Payments = () => {
     bill_id: '',
     amount: 0,
     payment_method: 'cash',
+    category: TAX_CATEGORIES[0], // Initialize with first category
     notes: ''
   });
 
@@ -98,6 +100,7 @@ const Payments = () => {
       bill_id: payment.bill_id,
       amount: payment.amount,
       payment_method: payment.payment_method,
+      category: payment.category || TAX_CATEGORIES[0], // Set existing or default
       notes: payment.notes
     });
     setEditDialogOpen(true);
@@ -108,13 +111,21 @@ const Payments = () => {
       bill_id: '',
       amount: 0,
       payment_method: 'cash',
+      category: TAX_CATEGORIES[0],
       notes: ''
     });
   };
 
   const handleExport = (format) => {
-    const headers = ['Consumer', 'Amount', 'Method', 'Notes', 'Date'];
-    const rows = payments.map(p => [p.consumer_name, p.amount, p.payment_method, p.notes, new Date(p.created_at).toLocaleDateString()]);
+    const headers = ['Consumer', 'Category', 'Amount', 'Method', 'Notes', 'Date'];
+    const rows = payments.map(p => [
+      p.consumer_name, 
+      p.category?.toUpperCase() || '-',
+      p.amount, 
+      p.payment_method, 
+      p.notes, 
+      new Date(p.created_at).toLocaleDateString()
+    ]);
     if (format === 'csv') {
       exportToCSV(rows, headers, 'payments.csv');
     } else {
@@ -141,185 +152,222 @@ const Payments = () => {
         <div className="flex gap-1">
           {payments.length > 0 && (
             <>
-              <Button variant="outline" size="sm" onClick={() => handleExport('csv')} className="h-10 px-3 text-xs" data-testid="export-payments-csv">
+              <Button variant="outline" size="sm" onClick={() => handleExport('csv')} className="h-10 px-3 text-xs">
                 <DownloadSimple size={16} className="mr-1" /> CSV
               </Button>
-              <Button variant="outline" size="sm" onClick={() => handleExport('pdf')} className="h-10 px-3 text-xs" data-testid="export-payments-pdf">
+              <Button variant="outline" size="sm" onClick={() => handleExport('pdf')} className="h-10 px-3 text-xs">
                 <DownloadSimple size={16} className="mr-1" /> PDF
               </Button>
             </>
           )}
-        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-          <DialogTrigger asChild>
-            <Button
-              onClick={() => {
-                resetForm();
-                setDialogOpen(true);
-              }}
-              className="bg-primary hover:bg-[#152B23] text-primary-foreground h-10 w-10 p-0 rounded-full"
-              data-testid="add-payment-button"
-            >
-              <Plus size={24} weight="bold" />
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="max-w-[90vw] rounded-xl" data-testid="payment-dialog">
-            <DialogHeader>
-              <DialogTitle className="font-heading text-xl font-light">Record Payment</DialogTitle>
-            </DialogHeader>
-            <form onSubmit={handleSubmit} className="space-y-3">
-              <div>
-                <Label htmlFor="bill" className="text-xs uppercase tracking-wider">Bill</Label>
-                <Select
-                  value={formData.bill_id}
-                  onValueChange={(value) => setFormData({ ...formData, bill_id: value })}
-                  required
-                >
-                  <SelectTrigger className="h-11" data-testid="payment-bill-select">
-                    <SelectValue placeholder="Select bill" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {bills.map((b) => (
-                      <SelectItem key={b.id} value={b.id}>
-                        {b.consumer_name} - ₹{b.due.toFixed(0)}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                {selectedBill && (
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Due: ₹{selectedBill.due.toFixed(0)}
-                  </p>
-                )}
-              </div>
-              <div>
-                <Label htmlFor="amount" className="text-xs uppercase tracking-wider">Amount</Label>
-                <Input
-                  id="amount"
-                  type="number"
-                  step="0.01"
-                  value={formData.amount}
-                  onChange={(e) => setFormData({ ...formData, amount: parseFloat(e.target.value) || 0 })}
-                  required
-                  className="h-11"
-                  data-testid="payment-amount-input"
-                />
-              </div>
-              <div>
-                <Label htmlFor="method" className="text-xs uppercase tracking-wider">Method</Label>
-                <Select
-                  value={formData.payment_method}
-                  onValueChange={(value) => setFormData({ ...formData, payment_method: value })}
-                >
-                  <SelectTrigger className="h-11" data-testid="payment-method-select">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="cash">Cash</SelectItem>
-                    <SelectItem value="bank_transfer">Bank Transfer</SelectItem>
-                    <SelectItem value="upi">UPI</SelectItem>
-                    <SelectItem value="cheque">Cheque</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label htmlFor="notes" className="text-xs uppercase tracking-wider">Notes</Label>
-                <Input
-                  id="notes"
-                  value={formData.notes}
-                  onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                  placeholder="Optional"
-                  className="h-11"
-                  data-testid="payment-notes-input"
-                />
-              </div>
-              <div className="flex gap-2 pt-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => {
-                    setDialogOpen(false);
-                    resetForm();
-                  }}
-                  className="flex-1 h-11"
-                >
-                  Cancel
-                </Button>
-                <Button type="submit" className="flex-1 h-11 bg-primary hover:bg-[#152B23]" data-testid="payment-submit-button">
-                  Record
-                </Button>
-              </div>
-            </form>
-          </DialogContent>
-        </Dialog>
+          <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+            <DialogTrigger asChild>
+              <Button
+                onClick={() => {
+                  resetForm();
+                  setDialogOpen(true);
+                }}
+                className="bg-primary hover:bg-[#152B23] text-primary-foreground h-10 w-10 p-0 rounded-full"
+              >
+                <Plus size={24} weight="bold" />
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-[90vw] rounded-xl">
+              <DialogHeader>
+                <DialogTitle className="font-heading text-xl font-light">Record Payment</DialogTitle>
+              </DialogHeader>
+              <form onSubmit={handleSubmit} className="space-y-3">
+                <div>
+                  <Label className="text-xs uppercase tracking-wider">Bill</Label>
+                  <Select
+                    value={formData.bill_id}
+                    onValueChange={(value) => setFormData({ ...formData, bill_id: value })}
+                    required
+                  >
+                    <SelectTrigger className="h-11">
+                      <SelectValue placeholder="Select bill" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {bills.map((b) => (
+                        <SelectItem key={b.id} value={b.id}>
+                          {b.consumer_name} - {b.category?.toUpperCase()} (₹{b.due.toFixed(0)})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {selectedBill && (
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Due: ₹{selectedBill.due.toFixed(0)}
+                    </p>
+                  )}
+                </div>
+                
+                {/* CATEGORY SELECTOR */}
+                <div>
+                  <Label className="text-xs uppercase tracking-wider">Payment Category</Label>
+                  <Select
+                    value={formData.category}
+                    onValueChange={(value) => setFormData({ ...formData, category: value })}
+                  >
+                    <SelectTrigger className="h-11">
+                      <SelectValue placeholder="Select Category" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {TAX_CATEGORIES.map((cat) => (
+                        <SelectItem key={cat} value={cat}>
+                          {cat.toUpperCase()}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
 
-        {/* Edit Payment Dialog */}
-        <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
-          <DialogContent className="max-w-[90vw] rounded-xl">
-            <DialogHeader>
-              <DialogTitle className="font-heading text-xl font-light">Edit Payment</DialogTitle>
-            </DialogHeader>
-            <form onSubmit={handleEdit} className="space-y-3">
-              <div>
-                <Label className="text-xs uppercase tracking-wider">Consumer</Label>
-                <div className="text-sm py-2">{editingPayment?.consumer_name}</div>
-              </div>
-              <div>
-                <Label htmlFor="edit_amount" className="text-xs uppercase tracking-wider">Amount</Label>
-                <Input
-                  id="edit_amount"
-                  type="number"
-                  step="0.01"
-                  value={formData.amount}
-                  onChange={(e) => setFormData({ ...formData, amount: parseFloat(e.target.value) || 0 })}
-                  className="h-11"
-                />
-              </div>
-              <div>
-                <Label htmlFor="edit_method" className="text-xs uppercase tracking-wider">Method</Label>
-                <Select
-                  value={formData.payment_method}
-                  onValueChange={(value) => setFormData({ ...formData, payment_method: value })}
-                >
-                  <SelectTrigger className="h-11">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="cash">Cash</SelectItem>
-                    <SelectItem value="bank_transfer">Bank Transfer</SelectItem>
-                    <SelectItem value="upi">UPI</SelectItem>
-                    <SelectItem value="cheque">Cheque</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label htmlFor="edit_notes" className="text-xs uppercase tracking-wider">Notes</Label>
-                <Input
-                  id="edit_notes"
-                  value={formData.notes}
-                  onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                  className="h-11"
-                />
-              </div>
-              <div className="flex gap-2 pt-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => {
-                    setEditDialogOpen(false);
-                    setEditingPayment(null);
-                    resetForm();
-                  }}
-                  className="flex-1 h-11"
-                >
-                  Cancel
-                </Button>
-                <Button type="submit" className="flex-1 h-11 bg-primary hover:bg-[#152B23]">
-                  Update
-                </Button>
-              </div>
-            </form>
-          </DialogContent>
-        </Dialog>
+                <div>
+                  <Label htmlFor="amount" className="text-xs uppercase tracking-wider">Amount</Label>
+                  <Input
+                    id="amount"
+                    type="number"
+                    step="0.01"
+                    value={formData.amount}
+                    onChange={(e) => setFormData({ ...formData, amount: parseFloat(e.target.value) || 0 })}
+                    required
+                    className="h-11"
+                  />
+                </div>
+                <div>
+                  <Label className="text-xs uppercase tracking-wider">Method</Label>
+                  <Select
+                    value={formData.payment_method}
+                    onValueChange={(value) => setFormData({ ...formData, payment_method: value })}
+                  >
+                    <SelectTrigger className="h-11">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="cash">Cash</SelectItem>
+                      <SelectItem value="bank_transfer">Bank Transfer</SelectItem>
+                      <SelectItem value="upi">UPI</SelectItem>
+                      <SelectItem value="cheque">Cheque</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label htmlFor="notes" className="text-xs uppercase tracking-wider">Notes</Label>
+                  <Input
+                    id="notes"
+                    value={formData.notes}
+                    onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+                    placeholder="Optional"
+                    className="h-11"
+                  />
+                </div>
+                <div className="flex gap-2 pt-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => {
+                      setDialogOpen(false);
+                      resetForm();
+                    }}
+                    className="flex-1 h-11"
+                  >
+                    Cancel
+                  </Button>
+                  <Button type="submit" className="flex-1 h-11 bg-primary">
+                    Record
+                  </Button>
+                </div>
+              </form>
+            </DialogContent>
+          </Dialog>
+
+          <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
+            <DialogContent className="max-w-[90vw] rounded-xl">
+              <DialogHeader>
+                <DialogTitle className="font-heading text-xl font-light">Edit Payment</DialogTitle>
+              </DialogHeader>
+              <form onSubmit={handleEdit} className="space-y-3">
+                <div>
+                  <Label className="text-xs uppercase tracking-wider">Consumer</Label>
+                  <div className="text-sm py-2 font-medium">{editingPayment?.consumer_name}</div>
+                </div>
+
+                <div>
+                  <Label className="text-xs uppercase tracking-wider">Category</Label>
+                  <Select
+                    value={formData.category}
+                    onValueChange={(value) => setFormData({ ...formData, category: value })}
+                  >
+                    <SelectTrigger className="h-11">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {TAX_CATEGORIES.map((cat) => (
+                        <SelectItem key={cat} value={cat}>
+                          {cat.toUpperCase()}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div>
+                  <Label htmlFor="edit_amount" className="text-xs uppercase tracking-wider">Amount</Label>
+                  <Input
+                    id="edit_amount"
+                    type="number"
+                    step="0.01"
+                    value={formData.amount}
+                    onChange={(e) => setFormData({ ...formData, amount: parseFloat(e.target.value) || 0 })}
+                    className="h-11"
+                  />
+                </div>
+                <div>
+                  <Label className="text-xs uppercase tracking-wider">Method</Label>
+                  <Select
+                    value={formData.payment_method}
+                    onValueChange={(value) => setFormData({ ...formData, payment_method: value })}
+                  >
+                    <SelectTrigger className="h-11">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="cash">Cash</SelectItem>
+                      <SelectItem value="bank_transfer">Bank Transfer</SelectItem>
+                      <SelectItem value="upi">UPI</SelectItem>
+                      <SelectItem value="cheque">Cheque</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label htmlFor="edit_notes" className="text-xs uppercase tracking-wider">Notes</Label>
+                  <Input
+                    id="edit_notes"
+                    value={formData.notes}
+                    onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+                    className="h-11"
+                  />
+                </div>
+                <div className="flex gap-2 pt-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => {
+                      setEditDialogOpen(false);
+                      setEditingPayment(null);
+                      resetForm();
+                    }}
+                    className="flex-1 h-11"
+                  >
+                    Cancel
+                  </Button>
+                  <Button type="submit" className="flex-1 h-11 bg-primary">
+                    Update
+                  </Button>
+                </div>
+              </form>
+            </DialogContent>
+          </Dialog>
         </div>
       </div>
 
@@ -332,12 +380,16 @@ const Payments = () => {
           {payments.map((payment, idx) => (
             <div
               key={payment.id}
-              className="bg-card border border-border p-4 rounded-xl"
-              data-testid={`payment-row-${idx}`}
+              className="bg-card border border-border p-4 rounded-xl shadow-sm"
             >
               <div className="flex items-start justify-between mb-3">
                 <div className="flex-1">
-                  <h3 className="font-heading text-lg font-light">{payment.consumer_name}</h3>
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-heading text-lg font-light">{payment.consumer_name}</h3>
+                    <span className="text-[10px] bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full uppercase font-bold tracking-tight border">
+                      {payment.category || 'Tax'}
+                    </span>
+                  </div>
                   <div className="flex items-center gap-1 text-sm text-muted-foreground mt-1">
                     <Calendar size={14} />
                     <span>{new Date(payment.created_at).toLocaleDateString()}</span>
@@ -352,7 +404,6 @@ const Payments = () => {
                     size="sm"
                     onClick={() => openEditDialog(payment)}
                     className="h-9 w-9 p-0"
-                    data-testid={`edit-payment-${idx}`}
                   >
                     <Pencil size={18} />
                   </Button>
@@ -361,7 +412,6 @@ const Payments = () => {
                     size="sm"
                     onClick={() => handleDelete(payment.id)}
                     className="h-9 w-9 p-0 text-destructive hover:text-destructive"
-                    data-testid={`delete-payment-${idx}`}
                   >
                     <Trash size={18} />
                   </Button>
@@ -370,11 +420,11 @@ const Payments = () => {
               <div className="grid grid-cols-2 gap-3 pt-3 border-t border-border">
                 <div>
                   <p className="text-xs text-muted-foreground">Method</p>
-                  <p className="font-medium capitalize">{payment.payment_method.replace('_', ' ')}</p>
+                  <p className="font-medium capitalize text-sm">{payment.payment_method.replace('_', ' ')}</p>
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground">Notes</p>
-                  <p className="font-medium text-sm">{payment.notes || '-'}</p>
+                  <p className="font-medium text-sm truncate">{payment.notes || '-'}</p>
                 </div>
               </div>
             </div>
