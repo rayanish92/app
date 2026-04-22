@@ -26,11 +26,9 @@ client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ['DB_NAME']]
 
 app = FastAPI(title="Water Tracker API")
-
-# Store db in app state for route access
 app.state.db = db
 
-# CORS middleware
+# CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["https://water-management-frontend-bkqh.onrender.com"],
@@ -45,10 +43,100 @@ app.include_router(bills_router, prefix="/api")
 app.include_router(payments_router, prefix="/api")
 app.include_router(export_router, prefix="/api")
 
-# --- Rate Config ---
-class RateConfigUpdate(BaseModel):
-    rate_per_bigha: float
-    katha_to_bigha_ratio: float
+# --- SMS Models & Templates ---
+
+class BillSMSRequest(BaseModel):
+    consumer_id: str
+    land_area: str    # e.g., "5 Bigha" or "১০ বিঘা"
+    amount: float      # e.g., 500.00
+    period: str       # e.g., "April 2026" or "বৈশাখ ১৪৩৩"
+
+def generate_bill_templates(name, area, amount, period):
+    """Generates bilingual message content"""
+    
+    # Bengali Template
+    bengali_text = (
+        f"নমস্কার {name}, আপনার জলের বিল।\n"
+        f"সময়কাল: {period}\n"
+        f"জমির পরিমাণ: {area}\n"
+        f"বিলের পরিমাণ: {amount} টাকা।\n"
+        f"অনগ্রহ করে দ্রুত পরিশোধ করুন। ধন্যবাদ।"
+    )
+    
+    # English Template
+    english_text = (
+        f"Hello {name}, your water bill.\n"
+        f"Period: {period}\n"
+        f"Land Area: {area}\n"
+        f"Bill Amount: Rs. {amount}.\n"
+        f"Please pay soon. Thank you."
+    )
+    
+    # Combined for WhatsApp or choose one for SMS
+    combined_message = f"{bengali_text}\n\n---\n\n{english_text}"
+    return combined_message
+
+@app.post('/api/sms/send-bill')
+async def send_bill_notification(sms: BillSMSRequest, request: Request):
+    await get_current_user(request, db)
+    
+    # 1. Fetch Consumer Details
+    consumer = await db.consumers.find_one({'id': sms.consumer_id}, {'_id': 0})
+    if not consumer:
+        raise HTTPException(status_code=404, detail='Consumer not found')
+    
+    phone = consumer.get('phone')
+    farmer_name = consumer.get('name', 'Farmer')
+    
+    # 2. Generate Message
+    full_message = generate_bill_templates(
+        farmer_name, sms.land_area, sms.amount, sms.period
+    )
+
+    # 3. Fast2SMS Integration
+    api_key = os.environ.get('FAST2SMS_API_KEY')
+    whatsapp_url = f"https://wa.me/91{phone}?text={requests.utils.quote(full_message)}"
+    
+    if not api_key:
+        return {
+            'status': 'Environment Key Missing',
+            'whatsapp_url': whatsapp_url,
+            'preview': full_message
+        }
+
+    url = "https://www.fast2sms.com/dev/bulkV2"
+    payload = {
+        "route": "q",
+        "message": full_message,
+        "language": "unicode", # Must be unicode for Bengali script
+        "numbers": phone,
+    }
+    
+    headers = {
+        "authorization": api_key,
+        "Content-Type": "application/json"
+    }
+
+    try:
+        response = requests.post(url, json=payload, headers=headers)
+        result = response.json()
+        
+        return {
+            'sms_status': 'Success' if result.get('return') else 'Failed',
+            'sms_response': result.get('message'),
+            'whatsapp_url': whatsapp_url,
+            'message_sent': full_message
+        }
+    except Exception as e:
+        logging.error(f"Fast2SMS Error: {str(e)}")
+        # If SMS gateway fails, still return WhatsApp link so user can send it manually
+        return {
+            'sms_status': 'Gateway Error',
+            'whatsapp_url': whatsapp_url,
+            'preview': full_message
+        }
+
+# --- Standard Dashboard & Config Endpoints (Unchanged) ---
 
 @app.get('/api/rate-config')
 async def get_rate_config(request: Request):
@@ -68,69 +156,6 @@ async def update_rate_config(config: RateConfigUpdate, request: Request):
     await db.rate_config.insert_one(config_dict)
     config_dict.pop('_id', None)
     return config_dict
-
-# --- SMS / WhatsApp endpoint ---
-
-class SMSRequest(BaseModel):
-    consumer_id: str
-    message: str  # Can accept Bengali or English text
-
-@app.post('/api/sms/send')
-async def send_sms(sms: SMSRequest, request: Request):
-    await get_current_user(request, db)
-    consumer = await db.consumers.find_one({'id': sms.consumer_id}, {'_id': 0})
-    
-    if not consumer:
-        raise HTTPException(status_code=404, detail='Consumer not found')
-
-    phone = consumer.get('phone')
-    api_key = os.environ.get('FAST2SMS_API_KEY')
-
-    if not api_key:
-        logging.error("FAST2SMS_API_KEY is missing in environment variables")
-        # Fallback to just logging if no API key is found
-        return {
-            'message': 'SMS key missing, but WhatsApp link generated',
-            'phone': phone,
-            'text': sms.message,
-            'whatsapp_url': f"https://wa.me/91{phone}?text={requests.utils.quote(sms.message)}"
-        }
-
-    # Fast2SMS Bulk V2 API Configuration
-    url = "https://www.fast2sms.com/dev/bulkV2"
-    
-    # We use route 'q' (Quick SMS). For Bengali (Unicode), 
-    # Fast2SMS handles unicode characters in the message string automatically.
-    payload = {
-        "route": "q",
-        "message": sms.message,
-        "language": "unicode", # Required for Bengali characters
-        "numbers": phone,
-    }
-    
-    headers = {
-        "authorization": api_key,
-        "Content-Type": "application/json"
-    }
-
-    try:
-        response = requests.post(url, json=payload, headers=headers)
-        result = response.json()
-        
-        logging.info(f"Fast2SMS Response for {phone}: {result}")
-
-        return {
-            'sms_status': 'Success' if result.get('return') else 'Failed',
-            'sms_detail': result.get('message', []),
-            'whatsapp_url': f"https://wa.me/91{phone}?text={requests.utils.quote(sms.message)}",
-            'phone': phone,
-            'text': sms.message
-        }
-    except Exception as e:
-        logging.error(f"SMS Sending Error: {str(e)}")
-        raise HTTPException(status_code=500, detail="Failed to reach SMS gateway")
-
-# --- Dashboard stats ---
 
 @app.get('/api/dashboard/stats')
 async def get_dashboard_stats(request: Request):
@@ -157,44 +182,25 @@ async def get_dashboard_stats(request: Request):
         'total_due': round(totals['total_due'], 2)
     }
 
-# --- Logging ---
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
+# --- Logging & Lifecycle ---
+
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# --- Startup / Shutdown ---
 @app.on_event('startup')
 async def startup_event():
     admin_email = os.environ.get('ADMIN_EMAIL', 'admin@waterbill.com')
     admin_password = os.environ.get('ADMIN_PASSWORD', 'admin123')
-
     existing_admin = await db.users.find_one({'email': admin_email})
     if not existing_admin:
-        hashed = hash_password(admin_password)
         await db.users.insert_one({
             'email': admin_email,
-            'password_hash': hashed,
+            'password_hash': hash_password(admin_password),
             'name': 'Admin',
             'role': 'admin',
             'created_at': datetime.now(timezone.utc).isoformat()
         })
-        logger.info(f'Admin user created: {admin_email}')
-    elif not verify_password(admin_password, existing_admin['password_hash']):
-        await db.users.update_one(
-            {'email': admin_email},
-            {'$set': {'password_hash': hash_password(admin_password)}}
-        )
-        logger.info('Admin password updated')
-
     await db.users.create_index('email', unique=True)
-    await db.password_reset_tokens.create_index('expires_at', expireAfterSeconds=3600)
-
-    credentials_path = Path("./memory")
-    credentials_path.mkdir(parents=True, exist_ok=True)
-    with open(credentials_path / 'test_credentials.md', 'w') as f:
-        f.write(f'# Test Credentials\n\n## Admin Account\n- Email: {admin_email}\n- Password: {admin_password}\n- Role: admin\n\n## Endpoints\n- Login: POST /api/auth/login\n- Get current user: GET /api/auth/me\n- Logout: POST /api/auth/logout\n')
 
 @app.on_event('shutdown')
 async def shutdown_db_client():
