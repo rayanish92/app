@@ -1,7 +1,7 @@
 export const TAX_CATEGORIES = [
-  "Boro chas water tax",
-  "Boro seed water tax",
-  "Potato water tax",
-  "Mustard water tax",
-  "Others water tax"
+  "boro chas tax",
+  "boro seed water tax",
+  "potato water tax",
+  "mustard water tax",
+  "others water tax"
 ];
