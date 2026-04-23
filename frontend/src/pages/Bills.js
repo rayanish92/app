@@ -13,6 +13,7 @@ import { TAX_CATEGORIES } from '../lib/constants';
 const API_URL = process.env.REACT_APP_BACKEND_URL;
 
 const Bills = () => {
+  // --- STATE ---
   const [bills, setBills] = useState([]);
   const [consumers, setConsumers] = useState([]);
   const [rateConfig, setRateConfig] = useState({ 
@@ -20,15 +21,18 @@ const Bills = () => {
   });
   const [loading, setLoading] = useState(true);
   
+  // Dialog States
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [rateDialogOpen, setRateDialogOpen] = useState(false);
   
+  // Form States
   const [editingBill, setEditingBill] = useState(null);
   const [formData, setFormData] = useState({
     consumer_id: '', land_used_bigha: 0, land_used_katha: 0, billing_period: '', category: TAX_CATEGORIES[0]
   });
 
+  // --- DATA SYNC ---
   const fetchData = useCallback(async () => {
     try {
       const [bRes, cRes, cfgRes] = await Promise.all([
@@ -48,6 +52,15 @@ const Bills = () => {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
+  // --- HELPER: BULLETPROOF NAME LOOKUP ---
+  // This guarantees the name displays on the card even if the backend is slow
+  const getFarmerName = (consumerId, backendName) => {
+    if (backendName && backendName !== 'Unknown Farmer' && backendName !== 'Unknown') return backendName;
+    const foundFarmer = consumers.find(c => String(c._id || c.id) === String(consumerId));
+    return foundFarmer ? foundFarmer.name : 'Unknown Farmer';
+  };
+
+  // --- RATE SETTINGS LOGIC ---
   const handleRateCategorySwitch = async (cat) => {
     try {
       const { data } = await axios.get(`${API_URL}/api/rate-config?category=${cat}`, { withCredentials: true });
@@ -62,9 +75,9 @@ const Bills = () => {
     try {
       const payload = {
         ...rateConfig,
-        rate_per_bigha: parseFloat(rateConfig.rate_per_bigha),
-        rate_per_katha: parseFloat(rateConfig.rate_per_katha),
-        katha_to_bigha_ratio: parseFloat(rateConfig.katha_to_bigha_ratio)
+        rate_per_bigha: parseFloat(rateConfig.rate_per_bigha) || 0,
+        rate_per_katha: parseFloat(rateConfig.rate_per_katha) || 0,
+        katha_to_bigha_ratio: parseFloat(rateConfig.katha_to_bigha_ratio) || 20
       };
       await axios.put(`${API_URL}/api/rate-config`, payload, { withCredentials: true });
       toast.success(`Rates for ${rateConfig.category.toUpperCase()} updated successfully`);
@@ -75,6 +88,7 @@ const Bills = () => {
     }
   };
 
+  // --- BILL CREATION & EDITING LOGIC ---
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!formData.consumer_id) return toast.error("Please select a farmer.");
@@ -124,7 +138,7 @@ const Bills = () => {
   };
 
   const handleDelete = async (bill) => {
-    if (window.confirm(`Are you sure you want to delete this bill for ${bill.consumer_name}?`)) {
+    if (window.confirm(`Are you sure you want to delete this bill for ${getFarmerName(bill.consumer_id, bill.consumer_name)}?`)) {
       try {
         const billId = bill._id || bill.id;
         await axios.delete(`${API_URL}/api/bills/${billId}`, { withCredentials: true });
@@ -136,6 +150,7 @@ const Bills = () => {
     }
   };
 
+  // --- COMMUNICATION & EXPORT LOGIC ---
   const handleSendSMS = async (bill) => {
     try {
       const payload = {
@@ -146,7 +161,7 @@ const Bills = () => {
         category: bill.category
       };
       await axios.post(`${API_URL}/api/sms/send-bill`, payload, { withCredentials: true });
-      toast.success(`SMS queued for ${bill.consumer_name}`);
+      toast.success(`SMS queued for ${getFarmerName(bill.consumer_id, bill.consumer_name)}`);
     } catch (e) { 
       toast.error('Failed to send SMS. Check your Fast2SMS API Key.'); 
     }
@@ -156,14 +171,22 @@ const Bills = () => {
     const consumer = consumers.find(c => String(c._id || c.id) === String(bill.consumer_id));
     if (!consumer?.phone) return toast.error("No phone number found for this farmer.");
     
-    const msg = `নমস্কার ${bill.consumer_name},\nবিভাগ: ${bill.category.toUpperCase()}\nপরিমাণ: ₹${bill.amount}\nধন্যবাদ।`;
+    const msg = `নমস্কার ${getFarmerName(bill.consumer_id, bill.consumer_name)},\nবিভাগ: ${bill.category.toUpperCase()}\nপরিমাণ: ₹${bill.amount}\nধন্যবাদ।`;
     window.open(`https://wa.me/91${consumer.phone}?text=${encodeURIComponent(msg)}`, '_blank');
   };
 
   const handleExport = (format) => {
     if (bills.length === 0) return toast.error("No data to export");
-    const headers = ['Farmer', 'Category', 'Land (Bigha)', 'Total (₹)', 'Paid (₹)', 'Due (₹)'];
-    const rows = bills.map(b => [ b.consumer_name || 'Unknown', b.category ? b.category.toUpperCase() : 'N/A', b.total_land_in_bigha, b.amount, b.paid, b.due ]);
+    
+    const headers = ['Farmer', 'Category', 'Land (Bigha & Katha)', 'Total (₹)', 'Paid (₹)', 'Due (₹)'];
+    const rows = bills.map(b => [ 
+      getFarmerName(b.consumer_id, b.consumer_name), 
+      b.category ? b.category.toUpperCase() : 'N/A', 
+      `${b.land_used_bigha} Bigha, ${b.land_used_katha} Katha`, 
+      b.amount, 
+      b.paid, 
+      b.due 
+    ]);
     
     format === 'csv' 
         ? exportToCSV(rows, headers, `Water_Bills_${new Date().toLocaleDateString()}.csv`)
@@ -224,7 +247,12 @@ const Bills = () => {
                 <span className="text-[10px] bg-blue-50 text-[#051039] px-3 py-1 rounded-full uppercase font-black border border-blue-100">
                   {bill.category || 'WATER TAX'}
                 </span>
-                <h3 className="text-xl font-bold text-slate-800 mt-3 leading-tight truncate pr-2">{bill.consumer_name || 'Unknown Farmer'}</h3>
+                
+                {/* NAME FIX: Uses the bulletproof lookup function */}
+                <h3 className="text-xl font-bold text-slate-800 mt-3 leading-tight truncate pr-2">
+                  {getFarmerName(bill.consumer_id, bill.consumer_name)}
+                </h3>
+                
                 <p className="text-xs font-bold text-slate-400 mt-0.5 uppercase tracking-tighter">Period: {bill.billing_period}</p>
               </div>
               <div className="flex flex-col gap-1 opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity bg-white pl-2">
@@ -236,12 +264,13 @@ const Bills = () => {
             </div>
             <div className="mt-8 pt-4 border-t border-slate-50 grid grid-cols-2 gap-2">
                 <div>
-                  <p className="text-[10px] font-bold text-slate-300 uppercase">Land / Total</p>
-                  <p className="text-sm font-bold text-slate-700">{bill.total_land_in_bigha} B / ₹{bill.amount}</p>
+                  <p className="text-[10px] font-bold text-slate-300 uppercase">Land Used</p>
+                  {/* KATHA FIX: Now shows exactly what you typed for Bigha and Katha */}
+                  <p className="text-sm font-bold text-slate-700">{bill.land_used_bigha} Bigha, {bill.land_used_katha} Katha</p>
                 </div>
                 <div className="text-right">
-                  <p className="text-[10px] font-bold text-slate-300 uppercase">Paid / Due</p>
-                  <p className="text-sm font-black text-emerald-600">₹{bill.paid} / <span className="text-rose-600">₹{bill.due}</span></p>
+                  <p className="text-[10px] font-bold text-slate-300 uppercase">Total / Due</p>
+                  <p className="text-sm font-black text-emerald-600">₹{bill.amount} / <span className="text-rose-600">₹{bill.due}</span></p>
                 </div>
             </div>
           </div>
@@ -257,7 +286,6 @@ const Bills = () => {
             <Select onValueChange={(v) => setFormData({...formData, consumer_id: v})} required>
                 <SelectTrigger className="h-14 rounded-2xl bg-slate-50 border-none px-6 text-lg"><SelectValue placeholder="Identify Farmer" /></SelectTrigger>
                 <SelectContent className="rounded-xl border-none shadow-2xl max-h-60">
-                  {/* FIX: Force keys and values to Strings to prevent UI crash */}
                   {consumers.map(c => (
                     <SelectItem key={String(c._id || c.id)} value={String(c._id || c.id)}>
                       {c.name || 'Unknown'} ({c.phone || 'No Phone'})
