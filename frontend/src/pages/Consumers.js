@@ -140,4 +140,4 @@ const Consumers = () => {
 };
 
 export default Consumers;
-this is the consumer page latest full code for your information.
+
