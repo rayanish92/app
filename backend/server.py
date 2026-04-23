@@ -35,9 +35,10 @@ BENGALI_CAT_MAP = {
     "others water tax": "অন্যান্য জল ট্যাক্স"
 }
 
-# --- 3. DATA MODELS (Defined early to prevent NameErrors) ---
+# --- 3. DATA MODELS ---
 class RateConfigUpdate(BaseModel):
     rate_per_bigha: float
+    rate_per_katha: float  # Added Katha rate support
     katha_to_bigha_ratio: float
     category: str 
 
@@ -48,15 +49,10 @@ class BillSMSRequest(BaseModel):
     period: str       
     category: str 
 
-class SMSRequest(BaseModel):
-    consumer_id: str
-    message: str
-
 # --- 4. DATABASE CONNECTION ---
 MONGO_URL = os.environ.get('MONGO_URL')
 DB_NAME = os.environ.get('DB_NAME', 'water_billing')
 
-# Connect to MongoDB Atlas
 client = AsyncIOMotorClient(MONGO_URL)
 db = client[DB_NAME]
 
@@ -100,7 +96,7 @@ def generate_bill_templates(name, area, amount, period, category):
     bengali_cat = BENGALI_CAT_MAP.get(clean_cat, "জলের ট্যাক্স")
 
     bengali_text = (
-        f"নমস্কার {name}, আপনার জলের বিল।\n"
+        f"নমস্কার {name}, আপনার বিল।\n"
         f"বিভাগ: {bengali_cat}\n"
         f"সময়কাল: {period}\n"
         f"জমির পরিমাণ: {area}\n"
@@ -131,13 +127,13 @@ async def get_categories():
 
 @app.get('/api/rate-config')
 async def get_rate_config(request: Request, category: Optional[str] = None):
-    # Fetch price for a specific category only
     target_category = category if category else TAX_CATEGORIES[0]
     config = await db.rate_config.find_one({"category": target_category}, {'_id': 0})
     
     if not config:
         return {
             'rate_per_bigha': 100.0, 
+            'rate_per_katha': 5.0, 
             'katha_to_bigha_ratio': 20.0, 
             'category': target_category
         }
@@ -146,7 +142,6 @@ async def get_rate_config(request: Request, category: Optional[str] = None):
 @app.put('/api/rate-config')
 async def update_rate_config(config: RateConfigUpdate, request: Request):
     await get_current_user(request, db)
-    # Upsert logic ensures Boro doesn't overwrite Potato
     await db.rate_config.update_one(
         {'category': config.category}, 
         {'$set': config.model_dump()}, 
@@ -206,8 +201,7 @@ async def send_bill_notification(sms: BillSMSRequest, request: Request):
     
     return {'sms_status': 'Success', 'whatsapp_url': whatsapp_url}
 
-# --- 9. STARTUP ---
 @app.on_event('startup')
 async def startup():
     await db.users.create_index('email', unique=True)
-    logger.info("Water Tracker Backend Started Successfully.")
+    logger.info("Backend Started Successfully.")
