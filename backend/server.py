@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
-# --- 2. MASTER CATEGORY DATA ---
+# --- 2. MASTER PROJECT DATA ---
 TAX_CATEGORIES = [
     "boro chas tax",
     "boro seed water tax",
@@ -38,8 +38,8 @@ BENGALI_CAT_MAP = {
 # --- 3. DATA MODELS ---
 class RateConfigUpdate(BaseModel):
     rate_per_bigha: float
-    rate_per_katha: float  # Added Katha rate support
-    katha_to_bigha_ratio: float
+    rate_per_katha: float
+    katha_to_bigha_ratio: float  # Added to handle local conversion logic
     category: str 
 
 class BillSMSRequest(BaseModel):
@@ -49,10 +49,15 @@ class BillSMSRequest(BaseModel):
     period: str       
     category: str 
 
+class SMSRequest(BaseModel):
+    consumer_id: str
+    message: str
+
 # --- 4. DATABASE CONNECTION ---
 MONGO_URL = os.environ.get('MONGO_URL')
 DB_NAME = os.environ.get('DB_NAME', 'water_billing')
 
+# Connect to MongoDB Atlas via Motor
 client = AsyncIOMotorClient(MONGO_URL)
 db = client[DB_NAME]
 
@@ -62,7 +67,7 @@ app.state.db = db
 # --- 5. ERROR HANDLING & CORS ---
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
-    logger.error(f"422 Error: {exc.errors()}")
+    logger.error(f"422 Validation Error: {exc.errors()}")
     return JSONResponse(
         status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
         content={"detail": exc.errors()},
@@ -76,7 +81,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# --- 6. ROUTER IMPORTS ---
+# --- 6. ROUTER IMPORTS (Integrated All Features) ---
 from routes.auth import router as auth_router
 from routes.consumers import router as consumers_router
 from routes.bills import router as bills_router
@@ -96,7 +101,7 @@ def generate_bill_templates(name, area, amount, period, category):
     bengali_cat = BENGALI_CAT_MAP.get(clean_cat, "জলের ট্যাক্স")
 
     bengali_text = (
-        f"নমস্কার {name}, আপনার বিল।\n"
+        f"নমস্কার {name}, আপনার জলের বিল।\n"
         f"বিভাগ: {bengali_cat}\n"
         f"সময়কাল: {period}\n"
         f"জমির পরিমাণ: {area}\n"
@@ -108,7 +113,7 @@ def generate_bill_templates(name, area, amount, period, category):
         f"Hello {name}, your water bill.\n"
         f"Category: {category.title()}\n"
         f"Period: {period}\n"
-        f"Area: {area}\n"
+        f"Land Area: {area}\n"
         f"Amount: Rs. {amount}."
     )
     
@@ -127,13 +132,15 @@ async def get_categories():
 
 @app.get('/api/rate-config')
 async def get_rate_config(request: Request, category: Optional[str] = None):
+    # Fetch price for a specific category only
     target_category = category if category else TAX_CATEGORIES[0]
     config = await db.rate_config.find_one({"category": target_category}, {'_id': 0})
     
     if not config:
+        # Defaults for categories not yet configured
         return {
             'rate_per_bigha': 100.0, 
-            'rate_per_katha': 5.0, 
+            'rate_per_katha': 5.0,
             'katha_to_bigha_ratio': 20.0, 
             'category': target_category
         }
@@ -142,6 +149,7 @@ async def get_rate_config(request: Request, category: Optional[str] = None):
 @app.put('/api/rate-config')
 async def update_rate_config(config: RateConfigUpdate, request: Request):
     await get_current_user(request, db)
+    # Upsert specific category rate so one crop doesn't overwrite another
     await db.rate_config.update_one(
         {'category': config.category}, 
         {'$set': config.model_dump()}, 
@@ -201,7 +209,23 @@ async def send_bill_notification(sms: BillSMSRequest, request: Request):
     
     return {'sms_status': 'Success', 'whatsapp_url': whatsapp_url}
 
+# --- 9. STARTUP LOGIC ---
 @app.on_event('startup')
 async def startup():
     await db.users.create_index('email', unique=True)
-    logger.info("Backend Started Successfully.")
+    # Create Default Admin if it doesn't exist
+    admin_email = os.environ.get('ADMIN_EMAIL', 'admin@waterbill.com')
+    admin_password = os.environ.get('ADMIN_PASSWORD', 'admin123')
+    if not await db.users.find_one({'email': admin_email}):
+        await db.users.insert_one({
+            'email': admin_email,
+            'password_hash': hash_password(admin_password),
+            'name': 'Admin',
+            'role': 'admin',
+            'created_at': datetime.now(timezone.utc).isoformat()
+        })
+    logger.info("Water Tracker Backend Started Successfully.")
+
+@app.on_event('shutdown')
+async def shutdown():
+    client.close()
