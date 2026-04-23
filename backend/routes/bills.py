@@ -6,14 +6,10 @@ from pydantic import BaseModel
 from utils.auth import get_current_user
 import logging
 
-# Set up logging to catch exactly what goes wrong
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix='/api/bills', tags=['bills'])
 
-# --- SCHEMA DEFINITION ---
-# Putting this here guarantees FastAPI knows exactly what data to expect, 
-# preventing "Validation Errors" or missing file issues.
 class BillCreate(BaseModel):
     consumer_id: str
     category: str
@@ -24,19 +20,20 @@ class BillCreate(BaseModel):
 def get_db(request: Request):
     return request.app.state.db
 
-# --- HELPER: FLEXIBLE ID LOOKUP ---
-# This ensures it finds the farmer regardless of if the frontend sends a MongoDB _id or a standard id
-def build_id_query(id_str: str):
+# --- HELPER: BULLETPROOF ID LOOKUP ---
+# This ensures we find the farmer whether their ID is an ObjectId, a String, or an Integer.
+def build_id_query(id_val):
     try:
-        return {"_id": ObjectId(id_str)}
+        return {"_id": ObjectId(str(id_val))}
     except InvalidId:
-        return {"id": id_str}
+        if str(id_val).isdigit():
+            return {"$or": [{"id": id_val}, {"id": str(id_val)}, {"id": int(id_val)}]}
+        return {"id": id_val}
 
-# --- HELPER: RECALCULATE CONSUMER TOTAL DUE ---
-async def update_consumer_due(db, consumer_id: str):
+async def update_consumer_due(db, consumer_id):
     try:
         pipeline = [
-            {'$match': {'consumer_id': consumer_id}},
+            {'$match': {'consumer_id': str(consumer_id)}},
             {'$group': {'_id': None, 'total': {'$sum': '$due'}}}
         ]
         cursor = db.bills.aggregate(pipeline)
@@ -49,8 +46,6 @@ async def update_consumer_due(db, consumer_id: str):
         )
     except Exception as e:
         logger.error(f"Failed to update consumer due amount: {str(e)}")
-
-# --- ENDPOINTS ---
 
 @router.get('')
 async def get_bills(
@@ -80,32 +75,24 @@ async def create_bill(bill_data: BillCreate, request: Request):
         db = get_db(request)
         await get_current_user(request, db)
         
-        # 1. FETCH RATE CAREFULLY
+        # 1. FETCH RATES
         rate_config = await db.rate_config.find_one({"category": bill_data.category})
-        
-        if not rate_config:
-            rate_per_bigha = 100.0
-            katha_ratio = 20.0
-        else:
-            # Force them to be floats in case they saved as strings in the DB
-            rate_per_bigha = float(rate_config.get('rate_per_bigha', 100.0))
-            katha_ratio = float(rate_config.get('katha_to_bigha_ratio', 20.0))
+        rate_per_bigha = float(rate_config.get('rate_per_bigha', 100.0)) if rate_config else 100.0
+        rate_per_katha = float(rate_config.get('rate_per_katha', 5.0)) if rate_config else 5.0
+        katha_ratio = float(rate_config.get('katha_to_bigha_ratio', 20.0)) if rate_config else 20.0
             
-        # SAFETY GUARD: Prevent Division by Zero crash
-        if katha_ratio == 0:
-            katha_ratio = 20.0 
+        if katha_ratio == 0: katha_ratio = 20.0 
 
-        # 2. CALCULATE
+        # 2. FIXED MATH: Calculate Bigha and Katha separately using their specific rates
         total_land = bill_data.land_used_bigha + (bill_data.land_used_katha / katha_ratio)
-        total_amount = round(total_land * rate_per_bigha, 2)
+        total_amount = round((bill_data.land_used_bigha * rate_per_bigha) + (bill_data.land_used_katha * rate_per_katha), 2)
 
-        # 3. GET CONSUMER NAME
+        # 3. GET CONSUMER NAME (Using bulletproof ID lookup)
         consumer = await db.consumers.find_one(build_id_query(bill_data.consumer_id))
         consumer_name = consumer.get('name', 'Unknown Farmer') if consumer else "Unknown Farmer"
 
-        # 4. PREPARE DOCUMENT
         new_bill = {
-            "consumer_id": bill_data.consumer_id,
+            "consumer_id": str(bill_data.consumer_id),
             "consumer_name": consumer_name,
             "category": bill_data.category,
             "amount": total_amount,
@@ -118,14 +105,12 @@ async def create_bill(bill_data: BillCreate, request: Request):
             "created_at": datetime.now(timezone.utc)
         }
         
-        # 5. INSERT & UPDATE
         result = await db.bills.insert_one(new_bill)
         await update_consumer_due(db, bill_data.consumer_id)
         
         return {"id": str(result.inserted_id), "status": "success"}
 
     except Exception as e:
-        # If anything breaks, print it to the server console AND send it to the frontend
         logger.error(f"CRITICAL ERROR creating bill: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Backend crash: {str(e)}")
 
@@ -135,15 +120,16 @@ async def update_bill(bill_id: str, bill_data: BillCreate, request: Request):
         db = get_db(request)
         await get_current_user(request, db)
 
+        # Fetch rates and separate the math just like the POST route
         rate_config = await db.rate_config.find_one({"category": bill_data.category})
         rate_per_bigha = float(rate_config.get('rate_per_bigha', 100.0)) if rate_config else 100.0
+        rate_per_katha = float(rate_config.get('rate_per_katha', 5.0)) if rate_config else 5.0
         katha_ratio = float(rate_config.get('katha_to_bigha_ratio', 20.0)) if rate_config else 20.0
         
-        if katha_ratio == 0:
-            katha_ratio = 20.0
+        if katha_ratio == 0: katha_ratio = 20.0
 
         total_land = bill_data.land_used_bigha + (bill_data.land_used_katha / katha_ratio)
-        total_amount = round(total_land * rate_per_bigha, 2)
+        total_amount = round((bill_data.land_used_bigha * rate_per_bigha) + (bill_data.land_used_katha * rate_per_katha), 2)
 
         existing = await db.bills.find_one(build_id_query(bill_id))
         if not existing:
