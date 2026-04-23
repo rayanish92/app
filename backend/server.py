@@ -83,8 +83,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
-
 # --- 6. ROUTER IMPORTS ---
 from routes.auth import router as auth_router
 from routes.consumers import router as consumers_router
@@ -93,11 +91,11 @@ from routes.payments import router as payments_router
 from routes.export import router as export_router
 from utils.auth import hash_password, verify_password, get_current_user
 
-# Add the prefix="/api" back to everything EXCEPT bills_router
+# --- THE FIX IS RIGHT HERE ---
 app.include_router(auth_router, prefix="/api")
 app.include_router(consumers_router, prefix="/api")
 app.include_router(bills_router)  # <-- Leave bills alone, it already has prefix='/api/bills' inside its own file
-app.include_router(payments_router, prefix="/api")
+app.include_router(payments_router) # <-- FIX: Removed the extra prefix="/api" to prevent Double Prefix bug!
 app.include_router(export_router, prefix="/api")
 
 # --- 7. ENDPOINTS ---
@@ -134,7 +132,7 @@ async def get_dashboard_stats(request: Request):
     res = totals[0] if totals else {}
     return {
         'total_consumers': await db.consumers.count_documents({}),
-        'total_bills': await db.bills.count_documents({}), # <-- ADD THIS LINE!
+        'total_bills': await db.bills.count_documents({}), 
         'total_amount': round(res.get('total_amount', 0), 2),
         'total_paid': round(res.get('total_paid', 0), 2),
         'total_due': round(res.get('total_due', 0), 2)
