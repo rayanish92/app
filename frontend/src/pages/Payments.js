@@ -54,18 +54,19 @@ const PaymentsContent = () => {
         axios.get(`${API_URL}/api/consumers`, { withCredentials: true })
       ]);
       
-      // BULLETPROOF ARRAYS: Ensures data is always an array, never undefined
       setPayments(Array.isArray(paymentsRes.data?.items) ? paymentsRes.data.items : (Array.isArray(paymentsRes.data) ? paymentsRes.data : []));
       setBills(Array.isArray(billsRes.data?.items) ? billsRes.data.items : (Array.isArray(billsRes.data) ? billsRes.data : []));
       setConsumers(Array.isArray(consumersRes.data?.items) ? consumersRes.data.items : (Array.isArray(consumersRes.data) ? consumersRes.data : []));
     } catch (error) {
-      toast.error('Failed to fetch database records');
-      console.error(error);
+      // FIX: This will now display the EXACT error coming from your backend
+      const errorMessage = error.response?.data?.detail || error.message || 'Unknown Network Error';
+      toast.error(`Error: ${errorMessage}`);
+      console.error("Full fetch error:", error);
     } finally {
       setLoading(false);
     }
   }, []);
-
+  
   useEffect(() => { fetchData(); }, [fetchData]);
 
   const handleSubmit = async (e) => {
