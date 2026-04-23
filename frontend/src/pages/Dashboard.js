@@ -16,7 +16,7 @@ const API_URL = process.env.REACT_APP_BACKEND_URL;
 
 const Dashboard = () => {
   const [stats, setStats] = useState({
-    total_consumers: 0,
+    total_farmers: 0,
     total_bills: 0,
     total_amount: 0,
     total_paid: 0,
@@ -33,7 +33,7 @@ const Dashboard = () => {
       
       // Ensure we are setting the data exactly as the backend sends it
       setStats({
-        total_consumers: data.total_consumers || 0,
+        total_farmers: data.total_farmers || 0,
         total_bills: data.total_bills || 0,
         total_amount: data.total_amount || 0,
         total_paid: data.total_paid || 0,
@@ -53,8 +53,8 @@ const Dashboard = () => {
 
   const statCards = [
     {
-      title: "Total Consumers",
-      value: stats.total_consumers,
+      title: "Total farmers",
+      value: stats.total_farmers,
       icon: <Users size={24} weight="light" />,
       color: "text-blue-600",
       bg: "bg-blue-50"
@@ -89,7 +89,7 @@ const Dashboard = () => {
     }
   ];
 
-  if (loading && stats.total_consumers === 0) {
+  if (loading && stats.total_farmers === 0) {
     return (
       <div className="flex flex-col items-center justify-center p-12 space-y-4">
         <div className="animate-spin text-primary">
