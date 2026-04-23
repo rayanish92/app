@@ -12,7 +12,28 @@ import { TAX_CATEGORIES } from '../lib/constants';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
 
-const Payments = () => {
+// --- ERROR BOUNDARY SAFETY NET ---
+class ErrorBoundary extends React.Component {
+  constructor(props) { super(props); this.state = { hasError: false, error: null }; }
+  static getDerivedStateFromError(error) { return { hasError: true, error }; }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="p-10 m-10 max-w-3xl mx-auto bg-rose-50 border border-rose-200 rounded-[2rem] text-rose-900 shadow-xl">
+          <h1 className="text-2xl font-black mb-2">React Crash Detected 🚨</h1>
+          <p className="font-medium text-rose-700">Please copy the error below and send it to me:</p>
+          <pre className="mt-4 p-6 bg-white rounded-xl overflow-auto text-xs font-mono text-slate-800 border border-rose-100">
+            {this.state.error?.toString()}
+          </pre>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+// --- MAIN CONTENT ---
+const PaymentsContent = () => {
   const [payments, setPayments] = useState([]);
   const [bills, setBills] = useState([]);
   const [consumers, setConsumers] = useState([]);
@@ -32,11 +53,14 @@ const Payments = () => {
         axios.get(`${API_URL}/api/bills`, { withCredentials: true }),
         axios.get(`${API_URL}/api/consumers`, { withCredentials: true })
       ]);
-      setPayments(paymentsRes.data.items || paymentsRes.data || []);
-      setBills(billsRes.data.items || billsRes.data || []);
-      setConsumers(consumersRes.data.items || consumersRes.data || []);
+      
+      // BULLETPROOF ARRAYS: Ensures data is always an array, never undefined
+      setPayments(Array.isArray(paymentsRes.data?.items) ? paymentsRes.data.items : (Array.isArray(paymentsRes.data) ? paymentsRes.data : []));
+      setBills(Array.isArray(billsRes.data?.items) ? billsRes.data.items : (Array.isArray(billsRes.data) ? billsRes.data : []));
+      setConsumers(Array.isArray(consumersRes.data?.items) ? consumersRes.data.items : (Array.isArray(consumersRes.data) ? consumersRes.data : []));
     } catch (error) {
-      toast.error('Failed to fetch data');
+      toast.error('Failed to fetch database records');
+      console.error(error);
     } finally {
       setLoading(false);
     }
@@ -47,7 +71,7 @@ const Payments = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!formData.bill_id) return toast.error("Please select a bill.");
-    if (!formData.amount || formData.amount <= 0) return toast.error("Please enter a valid amount.");
+    if (!formData.amount || Number(formData.amount) <= 0) return toast.error("Please enter a valid amount.");
 
     try {
       const payload = { ...formData, amount: Number(formData.amount) };
@@ -80,13 +104,13 @@ const Payments = () => {
       const payload = {
         consumer_id: consumerId,
         land_area: "Payment Receipt",
-        amount: Number(payment.amount),
-        period: new Date(payment.created_at).toLocaleDateString(),
+        amount: Number(payment.amount || 0),
+        period: payment.created_at ? new Date(payment.created_at).toLocaleDateString() : "Recent",
         category: payment.category || "PAYMENT"
       };
       
       await axios.post(`${API_URL}/api/sms/send-bill`, payload, { withCredentials: true });
-      toast.success(`Receipt SMS queued for ${payment.consumer_name}`);
+      toast.success(`Receipt SMS queued for ${payment.consumer_name || 'Farmer'}`);
     } catch (e) { 
       toast.error('Failed to send SMS. Check your API Key.'); 
     }
@@ -99,7 +123,7 @@ const Payments = () => {
 
     if (!consumer?.phone) return toast.error("No phone number found for this farmer.");
     
-    const msg = `নমস্কার ${payment.consumer_name},\nবিভাগ: ${(payment.category || 'বিল').toUpperCase()}\nজমা পরিমাণ: ₹${payment.amount}\nধন্যবাদ।`;
+    const msg = `নমস্কার ${payment.consumer_name || 'চাষী'},\nবিভাগ: ${(payment.category || 'বিল').toUpperCase()}\nজমা পরিমাণ: ₹${Number(payment.amount || 0)}\nধন্যবাদ।`;
     window.open(`https://wa.me/91${consumer.phone}?text=${encodeURIComponent(msg)}`, '_blank');
   };
 
@@ -109,16 +133,20 @@ const Payments = () => {
     if (payments.length === 0) return toast.error("No data to export");
     const headers = ['Farmer', 'Category', 'Amount', 'Method', 'Notes', 'Date'];
     const rows = payments.map(p => [
-      p.consumer_name || 'Unknown', p.category?.toUpperCase() || '-', p.amount, p.payment_method, p.notes, new Date(p.created_at).toLocaleDateString()
+      p.consumer_name || 'Unknown', 
+      p.category ? String(p.category).toUpperCase() : '-', 
+      Number(p.amount || 0), 
+      p.payment_method || 'cash', 
+      p.notes || '-', 
+      p.created_at ? new Date(p.created_at).toLocaleDateString() : 'N/A'
     ]);
     format === 'csv' 
       ? exportToCSV(rows, headers, `Payments_${new Date().toLocaleDateString()}.csv`) 
       : exportToPDF(rows, headers, 'Payment Collection Report', `Payments_${new Date().toLocaleDateString()}.pdf`);
   };
 
-  // STRICT MATH FIX: Ensures React accurately finds bills that have dues > 0
   const selectedBill = bills.find(b => String(b._id || b.id) === String(formData.bill_id));
-  const unpaidBills = bills.filter(b => Number(b.due) > 0);
+  const unpaidBills = bills.filter(b => Number(b.due || 0) > 0);
 
   if (loading) return <div className="p-12 text-center text-[#051039] font-black animate-pulse">Syncing Payments...</div>;
 
@@ -212,13 +240,13 @@ const Payments = () => {
               <div className="flex justify-between items-start">
                 <div className="flex-1">
                   <span className="text-[10px] bg-blue-50 text-[#051039] px-3 py-1 rounded-full uppercase font-black border border-blue-100">
-                    {payment.category || 'PAYMENT'}
+                    {payment.category ? String(payment.category).toUpperCase() : 'PAYMENT'}
                   </span>
                   <h3 className="text-xl font-bold text-slate-800 mt-3 leading-tight truncate pr-2">
                     {payment.consumer_name || 'Unknown Farmer'}
                   </h3>
                   <p className="text-xs font-bold text-slate-400 mt-0.5 uppercase tracking-tighter flex items-center gap-1">
-                    <Calendar size={14} weight="fill"/> {new Date(payment.created_at).toLocaleDateString()}
+                    <Calendar size={14} weight="fill"/> {payment.created_at ? new Date(payment.created_at).toLocaleDateString() : 'Unknown Date'}
                   </p>
                 </div>
                 <div className="flex flex-col gap-1 opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity bg-white pl-2">
@@ -230,7 +258,7 @@ const Payments = () => {
               <div className="mt-6 pt-4 border-t border-slate-50 grid grid-cols-3 gap-2">
                 <div>
                   <p className="text-[10px] font-bold text-slate-300 uppercase">Method</p>
-                  <p className="text-sm font-bold text-slate-700 capitalize">{payment.payment_method?.replace('_', ' ') || 'Cash'}</p>
+                  <p className="text-sm font-bold text-slate-700 capitalize">{payment.payment_method ? String(payment.payment_method).replace('_', ' ') : 'Cash'}</p>
                 </div>
                 <div>
                   <p className="text-[10px] font-bold text-slate-300 uppercase">Notes</p>
@@ -248,5 +276,12 @@ const Payments = () => {
     </div>
   );
 };
+
+// Wraps the component with the safety net
+const Payments = () => (
+  <ErrorBoundary>
+    <PaymentsContent />
+  </ErrorBoundary>
+);
 
 export default Payments;
