@@ -5,38 +5,38 @@ import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '../components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
-import { Plus, Calendar, Pencil, Trash, DownloadSimple } from '@phosphor-icons/react';
+import { Plus, Calendar, Pencil, Trash, DownloadSimple, WhatsappLogo, ChatCircleDots } from '@phosphor-icons/react';
 import { toast } from 'sonner';
 import { exportToCSV, exportToPDF } from '../lib/exportUtils';
-import { TAX_CATEGORIES } from '../lib/constants'; // Import shared constants
+import { TAX_CATEGORIES } from '../lib/constants';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
 
 const Payments = () => {
   const [payments, setPayments] = useState([]);
   const [bills, setBills] = useState([]);
+  const [consumers, setConsumers] = useState([]);
   const [loading, setLoading] = useState(true);
+  
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [editingPayment, setEditingPayment] = useState(null);
   const [formData, setFormData] = useState({
-    bill_id: '',
-    amount: 0,
-    payment_method: 'cash',
-    category: TAX_CATEGORIES[0], // Initialize with first category
-    notes: ''
+    bill_id: '', amount: 0, payment_method: 'cash', category: TAX_CATEGORIES[0], notes: ''
   });
 
+  // --- DATA FETCHING ---
   const fetchData = useCallback(async () => {
     try {
-      const [paymentsRes, billsRes] = await Promise.all([
+      // Fetch payments, ALL bills (to find consumer IDs for receipts), and consumers (for phone numbers)
+      const [paymentsRes, billsRes, consumersRes] = await Promise.all([
         axios.get(`${API_URL}/api/payments`, { withCredentials: true }),
-        axios.get(`${API_URL}/api/bills`, { withCredentials: true })
+        axios.get(`${API_URL}/api/bills`, { withCredentials: true }),
+        axios.get(`${API_URL}/api/consumers`, { withCredentials: true })
       ]);
-      const paymentsItems = paymentsRes.data.items || paymentsRes.data;
-      const billsItems = billsRes.data.items || billsRes.data;
-      setPayments(paymentsItems);
-      setBills(billsItems.filter(b => b.due > 0));
+      setPayments(paymentsRes.data.items || paymentsRes.data);
+      setBills(billsRes.data.items || billsRes.data);
+      setConsumers(consumersRes.data.items || consumersRes.data);
     } catch (error) {
       toast.error('Failed to fetch data');
     } finally {
@@ -44,49 +44,41 @@ const Payments = () => {
     }
   }, []);
 
-  useEffect(() => {
-    fetchData();
-  }, [fetchData]);
+  useEffect(() => { fetchData(); }, [fetchData]);
 
+  // --- ACTIONS ---
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
-      await axios.post(`${API_URL}/api/payments`, formData, {
-        withCredentials: true
-      });
+      await axios.post(`${API_URL}/api/payments`, formData, { withCredentials: true });
       toast.success('Payment recorded');
       setDialogOpen(false);
       resetForm();
       await fetchData();
     } catch (error) {
-      const msg = error.response?.data?.detail || 'Failed to record payment';
-      toast.error(msg);
+      toast.error(error.response?.data?.detail || 'Failed to record payment');
     }
   };
 
   const handleEdit = async (e) => {
     e.preventDefault();
     try {
-      await axios.put(`${API_URL}/api/payments/${editingPayment.id}`, formData, {
-        withCredentials: true
-      });
+      const id = editingPayment._id || editingPayment.id;
+      await axios.put(`${API_URL}/api/payments/${id}`, formData, { withCredentials: true });
       toast.success('Payment updated');
       setEditDialogOpen(false);
       setEditingPayment(null);
       resetForm();
       await fetchData();
     } catch (error) {
-      const msg = error.response?.data?.detail || 'Failed to update payment';
-      toast.error(msg);
+      toast.error(error.response?.data?.detail || 'Failed to update payment');
     }
   };
 
   const handleDelete = async (paymentId) => {
     if (!window.confirm('Delete this payment record?')) return;
     try {
-      await axios.delete(`${API_URL}/api/payments/${paymentId}`, {
-        withCredentials: true
-      });
+      await axios.delete(`${API_URL}/api/payments/${paymentId}`, { withCredentials: true });
       toast.success('Payment deleted');
       await fetchData();
     } catch (error) {
@@ -94,343 +86,248 @@ const Payments = () => {
     }
   };
 
+  // --- MESSAGING LOGIC ---
+  const handleSendSMS = async (payment) => {
+    try {
+      const bill = bills.find(b => (b._id || b.id) === payment.bill_id) || {};
+      const consumerId = String(payment.consumer_id || bill.consumer_id);
+      
+      const payload = {
+        consumer_id: consumerId,
+        land_area: "Payment Receipt",
+        amount: payment.amount,
+        period: new Date(payment.created_at).toLocaleDateString(),
+        category: payment.category || "PAYMENT"
+      };
+      
+      await axios.post(`${API_URL}/api/sms/send-bill`, payload, { withCredentials: true });
+      toast.success(`Receipt SMS queued for ${payment.consumer_name}`);
+    } catch (e) { 
+      toast.error('Failed to send SMS. Check your API Key.'); 
+    }
+  };
+
+  const sendWhatsApp = (payment) => {
+    const bill = bills.find(b => (b._id || b.id) === payment.bill_id) || {};
+    const consumerId = String(payment.consumer_id || bill.consumer_id);
+    const consumer = consumers.find(c => String(c._id || c.id) === consumerId);
+
+    if (!consumer?.phone) return toast.error("No phone number found for this farmer.");
+    
+    // Bengali Payment Receipt Message
+    const msg = `নমস্কার ${payment.consumer_name},\nবিভাগ: ${(payment.category || 'বিল').toUpperCase()}\nজমা পরিমাণ: ₹${payment.amount}\nধন্যবাদ।`;
+    window.open(`https://wa.me/91${consumer.phone}?text=${encodeURIComponent(msg)}`, '_blank');
+  };
+
+  // --- UTILS ---
   const openEditDialog = (payment) => {
     setEditingPayment(payment);
     setFormData({
       bill_id: payment.bill_id,
       amount: payment.amount,
       payment_method: payment.payment_method,
-      category: payment.category || TAX_CATEGORIES[0], // Set existing or default
+      category: payment.category || TAX_CATEGORIES[0],
       notes: payment.notes
     });
     setEditDialogOpen(true);
   };
 
-  const resetForm = () => {
-    setFormData({
-      bill_id: '',
-      amount: 0,
-      payment_method: 'cash',
-      category: TAX_CATEGORIES[0],
-      notes: ''
-    });
-  };
+  const resetForm = () => setFormData({ bill_id: '', amount: 0, payment_method: 'cash', category: TAX_CATEGORIES[0], notes: '' });
 
   const handleExport = (format) => {
-    const headers = ['Consumer', 'Category', 'Amount', 'Method', 'Notes', 'Date'];
+    if (payments.length === 0) return toast.error("No data to export");
+    const headers = ['Farmer', 'Category', 'Amount', 'Method', 'Notes', 'Date'];
     const rows = payments.map(p => [
-      p.consumer_name, 
-      p.category?.toUpperCase() || '-',
-      p.amount, 
-      p.payment_method, 
-      p.notes, 
-      new Date(p.created_at).toLocaleDateString()
+      p.consumer_name, p.category?.toUpperCase() || '-', p.amount, p.payment_method, p.notes, new Date(p.created_at).toLocaleDateString()
     ]);
-    if (format === 'csv') {
-      exportToCSV(rows, headers, 'payments.csv');
-    } else {
-      exportToPDF(rows, headers, 'Payments Report', 'payments.pdf');
-    }
-    toast.success(`Exported as ${format.toUpperCase()}`);
+    format === 'csv' 
+      ? exportToCSV(rows, headers, `Payments_${new Date().toLocaleDateString()}.csv`) 
+      : exportToPDF(rows, headers, 'Payment Collection Report', `Payments_${new Date().toLocaleDateString()}.pdf`);
   };
 
-  const selectedBill = bills.find(b => b.id === formData.bill_id);
+  const selectedBill = bills.find(b => (b._id || b.id) === formData.bill_id);
+  const unpaidBills = bills.filter(b => b.due > 0); // Only show bills with dues in the dropdown
 
-  if (loading) {
-    return <div className="flex justify-center p-8">Loading...</div>;
-  }
+  if (loading) return <div className="p-12 text-center text-[#051039] font-black animate-pulse">Syncing Payments...</div>;
 
   return (
-    <div className="space-y-4" data-testid="payments-page">
-      <div className="flex items-center justify-between">
+    <div className="space-y-6 p-4 max-w-7xl mx-auto">
+      
+      {/* HEADER */}
+      <div className="flex justify-between items-end border-b pb-4">
         <div>
-          <h1 className="font-heading text-3xl font-light tracking-tight text-foreground">
-            Payments
-          </h1>
-          <p className="mt-1 text-sm text-muted-foreground">{payments.length} total</p>
+          <h1 className="text-3xl font-light text-[#051039]">Payments</h1>
+          <p className="text-xs text-slate-400 font-bold uppercase tracking-widest">{payments.length} total records</p>
         </div>
-        <div className="flex gap-1">
+        <div className="flex gap-2">
           {payments.length > 0 && (
             <>
-              <Button variant="outline" size="sm" onClick={() => handleExport('csv')} className="h-10 px-3 text-xs">
-                <DownloadSimple size={16} className="mr-1" /> CSV
-              </Button>
-              <Button variant="outline" size="sm" onClick={() => handleExport('pdf')} className="h-10 px-3 text-xs">
-                <DownloadSimple size={16} className="mr-1" /> PDF
-              </Button>
+              <Button variant="outline" size="sm" onClick={() => handleExport('csv')}><DownloadSimple size={20} className="text-green-600"/></Button>
+              <Button variant="outline" size="sm" onClick={() => handleExport('pdf')}><DownloadSimple size={20} className="text-red-600"/></Button>
             </>
           )}
-          <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+          
+          <Dialog open={dialogOpen} onOpenChange={(open) => { setDialogOpen(open); if(!open) resetForm(); }}>
             <DialogTrigger asChild>
-              <Button
-                onClick={() => {
-                  resetForm();
-                  setDialogOpen(true);
-                }}
-                className="bg-primary hover:bg-[#152B23] text-primary-foreground h-10 w-10 p-0 rounded-full"
-              >
-                <Plus size={24} weight="bold" />
+              <Button className="rounded-full h-12 w-12 bg-[#051039] text-white shadow-xl transition-all hover:scale-110 active:scale-95">
+                <Plus size={28} />
               </Button>
             </DialogTrigger>
-            <DialogContent className="max-w-[90vw] rounded-xl">
-              <DialogHeader>
-                <DialogTitle className="font-heading text-xl font-light">Record Payment</DialogTitle>
-              </DialogHeader>
-              <form onSubmit={handleSubmit} className="space-y-3">
-                <div>
-                  <Label className="text-xs uppercase tracking-wider">Bill</Label>
-                  <Select
-                    value={formData.bill_id}
-                    onValueChange={(value) => setFormData({ ...formData, bill_id: value })}
-                    required
-                  >
-                    <SelectTrigger className="h-11">
-                      <SelectValue placeholder="Select bill" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {bills.map((b) => (
-                        <SelectItem key={b.id} value={b.id}>
-                          {b.consumer_name} - {b.category?.toUpperCase()} (₹{b.due.toFixed(0)})
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  {selectedBill && (
-                    <p className="text-xs text-muted-foreground mt-1">
-                      Due: ₹{selectedBill.due.toFixed(0)}
-                    </p>
-                  )}
-                </div>
+            <DialogContent className="rounded-[2.5rem] p-8 md:p-10 max-w-lg border-none shadow-3xl">
+              <DialogHeader><DialogTitle className="text-2xl font-light text-[#051039]">Record Payment</DialogTitle></DialogHeader>
+              <form onSubmit={handleSubmit} className="space-y-4 pt-4">
                 
-                {/* CATEGORY SELECTOR */}
-                <div>
-                  <Label className="text-xs uppercase tracking-wider">Payment Category</Label>
-                  <Select
-                    value={formData.category}
-                    onValueChange={(value) => setFormData({ ...formData, category: value })}
-                  >
-                    <SelectTrigger className="h-11">
-                      <SelectValue placeholder="Select Category" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {TAX_CATEGORIES.map((cat) => (
-                        <SelectItem key={cat} value={cat}>
-                          {cat.toUpperCase()}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                <Select value={formData.bill_id} onValueChange={(v) => setFormData({ ...formData, bill_id: v })} required>
+                  <SelectTrigger className="h-14 rounded-2xl bg-slate-50 border-none px-6 text-lg"><SelectValue placeholder="Select Pending Bill" /></SelectTrigger>
+                  <SelectContent className="rounded-xl border-none shadow-2xl max-h-60">
+                    {unpaidBills.map((b) => (
+                      <SelectItem key={b._id || b.id} value={String(b._id || b.id)}>
+                        {b.consumer_name} - {b.category?.toUpperCase()} (Due: ₹{b.due.toFixed(0)})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {selectedBill && <p className="text-xs text-rose-500 font-bold ml-4">Current Due: ₹{selectedBill.due.toFixed(0)}</p>}
+
+                <Select value={formData.category} onValueChange={(v) => setFormData({ ...formData, category: v })}>
+                  <SelectTrigger className="h-14 rounded-2xl bg-slate-50 border-none px-6 text-lg"><SelectValue placeholder="Payment Category" /></SelectTrigger>
+                  <SelectContent className="rounded-xl border-none shadow-2xl">
+                    {TAX_CATEGORIES.map((cat) => <SelectItem key={cat} value={cat}>{cat.toUpperCase()}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label className="text-[10px] font-bold text-slate-500 uppercase ml-2">Amount (₹)</Label>
+                    <Input type="number" step="0.01" value={formData.amount} onChange={(e) => setFormData({ ...formData, amount: parseFloat(e.target.value) || 0 })} required className="h-14 rounded-2xl bg-slate-50 border-none px-6 text-lg mt-1" />
+                  </div>
+                  <div>
+                    <Label className="text-[10px] font-bold text-slate-500 uppercase ml-2">Method</Label>
+                    <Select value={formData.payment_method} onValueChange={(v) => setFormData({ ...formData, payment_method: v })}>
+                      <SelectTrigger className="h-14 rounded-2xl bg-slate-50 border-none px-6 text-lg mt-1"><SelectValue /></SelectTrigger>
+                      <SelectContent className="rounded-xl border-none shadow-2xl">
+                        <SelectItem value="cash">Cash</SelectItem>
+                        <SelectItem value="bank_transfer">Bank Transfer</SelectItem>
+                        <SelectItem value="upi">UPI</SelectItem>
+                        <SelectItem value="cheque">Cheque</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
                 </div>
 
                 <div>
-                  <Label htmlFor="amount" className="text-xs uppercase tracking-wider">Amount</Label>
-                  <Input
-                    id="amount"
-                    type="number"
-                    step="0.01"
-                    value={formData.amount}
-                    onChange={(e) => setFormData({ ...formData, amount: parseFloat(e.target.value) || 0 })}
-                    required
-                    className="h-11"
-                  />
-                </div>
-                <div>
-                  <Label className="text-xs uppercase tracking-wider">Method</Label>
-                  <Select
-                    value={formData.payment_method}
-                    onValueChange={(value) => setFormData({ ...formData, payment_method: value })}
-                  >
-                    <SelectTrigger className="h-11">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="cash">Cash</SelectItem>
-                      <SelectItem value="bank_transfer">Bank Transfer</SelectItem>
-                      <SelectItem value="upi">UPI</SelectItem>
-                      <SelectItem value="cheque">Cheque</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <Label htmlFor="notes" className="text-xs uppercase tracking-wider">Notes</Label>
-                  <Input
-                    id="notes"
-                    value={formData.notes}
-                    onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                    placeholder="Optional"
-                    className="h-11"
-                  />
-                </div>
-                <div className="flex gap-2 pt-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => {
-                      setDialogOpen(false);
-                      resetForm();
-                    }}
-                    className="flex-1 h-11"
-                  >
-                    Cancel
-                  </Button>
-                  <Button type="submit" className="flex-1 h-11 bg-primary">
-                    Record
-                  </Button>
-                </div>
-              </form>
-            </DialogContent>
-          </Dialog>
-
-          <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
-            <DialogContent className="max-w-[90vw] rounded-xl">
-              <DialogHeader>
-                <DialogTitle className="font-heading text-xl font-light">Edit Payment</DialogTitle>
-              </DialogHeader>
-              <form onSubmit={handleEdit} className="space-y-3">
-                <div>
-                  <Label className="text-xs uppercase tracking-wider">Consumer</Label>
-                  <div className="text-sm py-2 font-medium">{editingPayment?.consumer_name}</div>
+                  <Label className="text-[10px] font-bold text-slate-500 uppercase ml-2">Notes</Label>
+                  <Input value={formData.notes} onChange={(e) => setFormData({ ...formData, notes: e.target.value })} placeholder="Optional" className="h-14 rounded-2xl bg-slate-50 border-none px-6 text-lg mt-1" />
                 </div>
 
-                <div>
-                  <Label className="text-xs uppercase tracking-wider">Category</Label>
-                  <Select
-                    value={formData.category}
-                    onValueChange={(value) => setFormData({ ...formData, category: value })}
-                  >
-                    <SelectTrigger className="h-11">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {TAX_CATEGORIES.map((cat) => (
-                        <SelectItem key={cat} value={cat}>
-                          {cat.toUpperCase()}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div>
-                  <Label htmlFor="edit_amount" className="text-xs uppercase tracking-wider">Amount</Label>
-                  <Input
-                    id="edit_amount"
-                    type="number"
-                    step="0.01"
-                    value={formData.amount}
-                    onChange={(e) => setFormData({ ...formData, amount: parseFloat(e.target.value) || 0 })}
-                    className="h-11"
-                  />
-                </div>
-                <div>
-                  <Label className="text-xs uppercase tracking-wider">Method</Label>
-                  <Select
-                    value={formData.payment_method}
-                    onValueChange={(value) => setFormData({ ...formData, payment_method: value })}
-                  >
-                    <SelectTrigger className="h-11">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="cash">Cash</SelectItem>
-                      <SelectItem value="bank_transfer">Bank Transfer</SelectItem>
-                      <SelectItem value="upi">UPI</SelectItem>
-                      <SelectItem value="cheque">Cheque</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <Label htmlFor="edit_notes" className="text-xs uppercase tracking-wider">Notes</Label>
-                  <Input
-                    id="edit_notes"
-                    value={formData.notes}
-                    onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                    className="h-11"
-                  />
-                </div>
-                <div className="flex gap-2 pt-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => {
-                      setEditDialogOpen(false);
-                      setEditingPayment(null);
-                      resetForm();
-                    }}
-                    className="flex-1 h-11"
-                  >
-                    Cancel
-                  </Button>
-                  <Button type="submit" className="flex-1 h-11 bg-primary">
-                    Update
-                  </Button>
-                </div>
+                <Button type="submit" className="w-full h-16 bg-[#051039] text-white rounded-2xl font-bold shadow-xl text-lg mt-2">Submit Payment</Button>
               </form>
             </DialogContent>
           </Dialog>
         </div>
       </div>
 
+      {/* PAYMENT CARDS GRID */}
       {payments.length === 0 ? (
-        <div className="text-center py-12 bg-card border border-border rounded-xl">
-          <p className="text-muted-foreground text-sm">No payments yet</p>
+        <div className="text-center py-12 bg-white border border-slate-100 rounded-[2rem]">
+          <p className="text-slate-400 font-bold uppercase tracking-widest text-sm">No payments recorded</p>
         </div>
       ) : (
-        <div className="space-y-3">
-          {payments.map((payment, idx) => (
-            <div
-              key={payment.id}
-              className="bg-card border border-border p-4 rounded-xl shadow-sm"
-            >
-              <div className="flex items-start justify-between mb-3">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {payments.map((payment) => (
+            <div key={payment._id || payment.id} className="bg-white border p-6 rounded-[2rem] shadow-sm hover:shadow-xl transition-all group relative overflow-hidden">
+              
+              <div className="flex justify-between items-start">
                 <div className="flex-1">
-                  <div className="flex items-center gap-2">
-                    <h3 className="font-heading text-lg font-light">{payment.consumer_name}</h3>
-                    <span className="text-[10px] bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full uppercase font-bold tracking-tight border">
-                      {payment.category || 'Tax'}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-1 text-sm text-muted-foreground mt-1">
-                    <Calendar size={14} />
-                    <span>{new Date(payment.created_at).toLocaleDateString()}</span>
-                  </div>
+                  <span className="text-[10px] bg-blue-50 text-[#051039] px-3 py-1 rounded-full uppercase font-black border border-blue-100">
+                    {payment.category || 'PAYMENT'}
+                  </span>
+                  <h3 className="text-xl font-bold text-slate-800 mt-3 leading-tight truncate pr-2">
+                    {payment.consumer_name}
+                  </h3>
+                  <p className="text-xs font-bold text-slate-400 mt-0.5 uppercase tracking-tighter flex items-center gap-1">
+                    <Calendar size={14} weight="fill"/> {new Date(payment.created_at).toLocaleDateString()}
+                  </p>
                 </div>
-                <div className="flex items-center gap-2">
-                  <div className="text-right mr-2">
-                    <p className="text-lg font-heading font-light text-green-600">₹{payment.amount.toFixed(0)}</p>
-                  </div>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => openEditDialog(payment)}
-                    className="h-9 w-9 p-0"
-                  >
-                    <Pencil size={18} />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => handleDelete(payment.id)}
-                    className="h-9 w-9 p-0 text-destructive hover:text-destructive"
-                  >
-                    <Trash size={18} />
-                  </Button>
+                
+                {/* Hover Actions */}
+                <div className="flex flex-col gap-1 opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity bg-white pl-2">
+                  <Button type="button" variant="ghost" size="sm" onClick={() => sendWhatsApp(payment)} title="WhatsApp Receipt" className="text-emerald-500 rounded-full h-8 w-8 p-0"><WhatsappLogo size={22} weight="fill"/></Button>
+                  <Button type="button" variant="ghost" size="sm" onClick={() => handleSendSMS(payment)} title="SMS Receipt" className="text-blue-500 rounded-full h-8 w-8 p-0"><ChatCircleDots size={22} weight="fill"/></Button>
+                  <Button type="button" variant="ghost" size="sm" onClick={() => openEditDialog(payment)} title="Edit" className="text-slate-400 hover:text-[#051039] rounded-full h-8 w-8 p-0"><Pencil size={20}/></Button>
+                  <Button type="button" variant="ghost" size="sm" onClick={() => handleDelete(payment._id || payment.id)} title="Delete" className="text-rose-400 hover:text-rose-600 rounded-full h-8 w-8 p-0"><Trash size={20}/></Button>
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-3 pt-3 border-t border-border">
+
+              {/* Bottom Info Grid */}
+              <div className="mt-6 pt-4 border-t border-slate-50 grid grid-cols-3 gap-2">
                 <div>
-                  <p className="text-xs text-muted-foreground">Method</p>
-                  <p className="font-medium capitalize text-sm">{payment.payment_method.replace('_', ' ')}</p>
+                  <p className="text-[10px] font-bold text-slate-300 uppercase">Method</p>
+                  <p className="text-sm font-bold text-slate-700 capitalize">{payment.payment_method.replace('_', ' ')}</p>
                 </div>
                 <div>
-                  <p className="text-xs text-muted-foreground">Notes</p>
-                  <p className="font-medium text-sm truncate">{payment.notes || '-'}</p>
+                  <p className="text-[10px] font-bold text-slate-300 uppercase">Notes</p>
+                  <p className="text-sm font-bold text-slate-700 truncate">{payment.notes || '-'}</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-[10px] font-bold text-slate-300 uppercase">Amount Paid</p>
+                  <p className="text-sm font-black text-emerald-600">₹{payment.amount.toFixed(0)}</p>
                 </div>
               </div>
+
             </div>
           ))}
         </div>
       )}
+
+      {/* EDIT PAYMENT DIALOG */}
+      <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
+        <DialogContent className="rounded-[2.5rem] p-8 md:p-10 max-w-lg border-none shadow-3xl">
+          <DialogHeader><DialogTitle className="text-2xl font-light text-[#051039]">Edit Payment</DialogTitle></DialogHeader>
+          <form onSubmit={handleEdit} className="space-y-4 pt-4">
+            
+            <div>
+              <Label className="text-[10px] font-bold text-slate-500 uppercase ml-2">Farmer</Label>
+              <div className="h-14 rounded-2xl bg-slate-50 border-none px-6 text-lg flex items-center font-bold text-slate-700 mt-1">
+                {editingPayment?.consumer_name}
+              </div>
+            </div>
+
+            <Select value={formData.category} onValueChange={(v) => setFormData({ ...formData, category: v })}>
+              <SelectTrigger className="h-14 rounded-2xl bg-slate-50 border-none px-6 text-lg mt-2"><SelectValue /></SelectTrigger>
+              <SelectContent className="rounded-xl border-none shadow-2xl">
+                {TAX_CATEGORIES.map((cat) => <SelectItem key={cat} value={cat}>{cat.toUpperCase()}</SelectItem>)}
+              </SelectContent>
+            </Select>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label className="text-[10px] font-bold text-slate-500 uppercase ml-2">Amount (₹)</Label>
+                <Input type="number" step="0.01" value={formData.amount} onChange={(e) => setFormData({ ...formData, amount: parseFloat(e.target.value) || 0 })} required className="h-14 rounded-2xl bg-slate-50 border-none px-6 text-lg mt-1" />
+              </div>
+              <div>
+                <Label className="text-[10px] font-bold text-slate-500 uppercase ml-2">Method</Label>
+                <Select value={formData.payment_method} onValueChange={(v) => setFormData({ ...formData, payment_method: v })}>
+                  <SelectTrigger className="h-14 rounded-2xl bg-slate-50 border-none px-6 text-lg mt-1"><SelectValue /></SelectTrigger>
+                  <SelectContent className="rounded-xl border-none shadow-2xl">
+                    <SelectItem value="cash">Cash</SelectItem>
+                    <SelectItem value="bank_transfer">Bank Transfer</SelectItem>
+                    <SelectItem value="upi">UPI</SelectItem>
+                    <SelectItem value="cheque">Cheque</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div>
+              <Label className="text-[10px] font-bold text-slate-500 uppercase ml-2">Notes</Label>
+              <Input value={formData.notes} onChange={(e) => setFormData({ ...formData, notes: e.target.value })} className="h-14 rounded-2xl bg-slate-50 border-none px-6 text-lg mt-1" />
+            </div>
+
+            <Button type="submit" className="w-full h-16 bg-[#051039] text-white rounded-2xl font-bold shadow-xl text-lg mt-2">Update Payment</Button>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
