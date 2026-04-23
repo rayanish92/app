@@ -3,14 +3,7 @@ import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
-import { 
-  Users, 
-  FileText, 
-  CurrencyInr, 
-  CheckCircle, 
-  WarningCircle, 
-  ArrowsClockwise 
-} from '@phosphor-icons/react';
+import { Users, FileText, CurrencyInr, CheckCircle, WarningCircle, ArrowsClockwise } from '@phosphor-icons/react';
 import { toast } from 'sonner';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
@@ -19,27 +12,22 @@ const Dashboard = () => {
   const navigate = useNavigate();
   
   const [stats, setStats] = useState({
-    total_farmers: 0,
-    total_bills: 0,
-    total_amount: 0,
-    total_paid: 0,
-    total_due: 0
+    total_consumers: 0, total_bills: 0, total_amount: 0, total_paid: 0, total_due: 0
   });
   const [loading, setLoading] = useState(true);
 
   const fetchStats = useCallback(async () => {
     try {
       setLoading(true);
-      const { data } = await axios.get(`${API_URL}/api/dashboard/stats`, {
-        withCredentials: true
-      });
+      const { data } = await axios.get(`${API_URL}/api/dashboard/stats`, { withCredentials: true });
       
+      // STRICT MATH FIX: Forces all incoming data to be a valid Number, ensuring it doesn't fail on "0" strings
       setStats({
-        total_farmers: data.total_farmers || 0,
-        total_bills: data.total_bills || 0,
-        total_amount: data.total_amount || 0,
-        total_paid: data.total_paid || 0,
-        total_due: data.total_due || 0
+        total_consumers: Number(data.total_consumers || data.total_farmers || 0),
+        total_bills: Number(data.total_bills || 0),
+        total_amount: Number(data.total_amount || 0),
+        total_paid: Number(data.total_paid || 0),
+        total_due: Number(data.total_due || 0)
       });
     } catch (error) {
       console.error("Dashboard Error:", error);
@@ -49,14 +37,12 @@ const Dashboard = () => {
     }
   }, []);
 
-  useEffect(() => {
-    fetchStats();
-  }, [fetchStats]);
+  useEffect(() => { fetchStats(); }, [fetchStats]);
 
   const statCards = [
     {
       title: "Total Farmers",
-      value: stats.total_farmers,
+      value: stats.total_consumers,
       icon: <Users size={24} weight="light" />,
       color: "text-blue-600",
       bg: "bg-blue-50",
@@ -98,12 +84,10 @@ const Dashboard = () => {
     }
   ];
 
-  if (loading && stats.total_farmers === 0) {
+  if (loading && stats.total_consumers === 0) {
     return (
       <div className="flex flex-col items-center justify-center p-12 space-y-4">
-        <div className="animate-spin text-[#051039]">
-          <ArrowsClockwise size={32} />
-        </div>
+        <div className="animate-spin text-[#051039]"><ArrowsClockwise size={32} /></div>
         <p className="text-sm text-muted-foreground font-light">Loading statistics...</p>
       </div>
     );
@@ -113,88 +97,42 @@ const Dashboard = () => {
     <div className="space-y-6 max-w-7xl mx-auto p-4">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="font-heading text-3xl font-light tracking-tight text-[#051039]">
-            Dashboard
-          </h1>
-          <p className="mt-1 text-sm text-slate-400 font-medium uppercase tracking-widest">
-            Overview of your water management system
-          </p>
+          <h1 className="font-heading text-3xl font-light tracking-tight text-[#051039]">Dashboard</h1>
+          <p className="mt-1 text-sm text-slate-400 font-medium uppercase tracking-widest">Overview of your water management system</p>
         </div>
-        <Button 
-          variant="outline" 
-          size="sm" 
-          onClick={fetchStats}
-          disabled={loading}
-          className="h-10 px-4 rounded-xl border-slate-200 hover:bg-slate-50"
-        >
-          <ArrowsClockwise size={16} className={`mr-2 ${loading ? 'animate-spin' : ''}`} />
-          Refresh
+        <Button variant="outline" size="sm" onClick={fetchStats} disabled={loading} className="h-10 px-4 rounded-xl border-slate-200 hover:bg-slate-50">
+          <ArrowsClockwise size={16} className={`mr-2 ${loading ? 'animate-spin' : ''}`} /> Refresh
         </Button>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {statCards.map((card, idx) => {
-          // Inner card component
           const CardInner = (
-            <Card 
-              className={`border border-border overflow-hidden rounded-[2rem] shadow-sm transition-all duration-200 h-full ${
-                card.clickable 
-                  ? 'hover:shadow-xl hover:-translate-y-1 hover:border-[#051039]/20' 
-                  : 'hover:shadow-md'
-              }`}
-            >
+            <Card className={`border border-border overflow-hidden rounded-[2rem] shadow-sm transition-all duration-200 h-full ${card.clickable ? 'hover:shadow-xl hover:-translate-y-1 hover:border-[#051039]/20' : 'hover:shadow-md'}`}>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 pt-6 px-6">
-                <CardTitle className="text-xs font-bold uppercase tracking-wider text-slate-400">
-                  {card.title}
-                </CardTitle>
-                <div className={`p-3 rounded-2xl ${card.bg} ${card.color}`}>
-                  {card.icon}
-                </div>
+                <CardTitle className="text-xs font-bold uppercase tracking-wider text-slate-400">{card.title}</CardTitle>
+                <div className={`p-3 rounded-2xl ${card.bg} ${card.color}`}>{card.icon}</div>
               </CardHeader>
               <CardContent className="px-6 pb-6">
-                <div className="text-3xl font-bold text-slate-800 tracking-tight mt-2">
-                  {card.value}
-                </div>
+                <div className="text-3xl font-bold text-slate-800 tracking-tight mt-2">{card.value}</div>
               </CardContent>
             </Card>
           );
-
-          // If clickable, wrap in a div that handles the click
-          if (card.clickable) {
-            return (
-              <div 
-                key={idx} 
-                onClick={card.onClick} 
-                className="cursor-pointer h-full"
-                role="button"
-                tabIndex={0}
-              >
-                {CardInner}
-              </div>
-            );
-          }
-
-          // If not clickable, render normally
+          if (card.clickable) return (<div key={idx} onClick={card.onClick} className="cursor-pointer h-full" role="button" tabIndex={0}>{CardInner}</div>);
           return <div key={idx} className="h-full">{CardInner}</div>;
         })}
       </div>
 
-      {/* Summary Footer */}
       <div className="mt-8 p-8 bg-blue-50/50 rounded-[2rem] border border-blue-100">
         <div className="flex flex-col md:flex-row items-center justify-between gap-6 text-center md:text-left">
           <div>
             <h3 className="font-bold text-lg text-[#051039]">Billing Efficiency</h3>
             <p className="text-sm font-medium text-slate-500 mt-1">
-              You have collected <span className="text-emerald-600 font-bold">{stats.total_amount > 0 
-                ? ((stats.total_paid / stats.total_amount) * 100).toFixed(1) 
-                : 0}%</span> of total billed amounts.
+              You have collected <span className="text-emerald-600 font-bold">{stats.total_amount > 0 ? ((stats.total_paid / stats.total_amount) * 100).toFixed(1) : 0}%</span> of total billed amounts.
             </p>
           </div>
           <div className="h-3 w-full md:w-72 bg-slate-200 rounded-full overflow-hidden shadow-inner">
-            <div 
-              className="h-full bg-emerald-500 transition-all duration-1000 ease-out rounded-full" 
-              style={{ width: `${stats.total_amount > 0 ? (stats.total_paid / stats.total_amount) * 100 : 0}%` }}
-            />
+            <div className="h-full bg-emerald-500 transition-all duration-1000 ease-out rounded-full" style={{ width: `${stats.total_amount > 0 ? (stats.total_paid / stats.total_amount) * 100 : 0}%` }} />
           </div>
         </div>
       </div>
