@@ -64,7 +64,7 @@ const MobileLayout = () => {
 
   const navItems = [
     { path: '/dashboard', label: 'Dashboard', icon: ChartLine },
-    { path: '/consumers', label: 'Consumers', icon: Users },
+    { path: '/farmers', label: 'farmers', icon: Users },
     { path: '/bills', label: 'Bills', icon: FileText },
     { path: '/payments', label: 'Payments', icon: CurrencyInr },
     ...(user?.role === 'admin' ? [{ path: '/users', label: 'Users', icon: UserCircle }] : [])
