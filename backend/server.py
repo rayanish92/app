@@ -83,6 +83,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+
 # --- 6. ROUTER IMPORTS ---
 from routes.auth import router as auth_router
 from routes.consumers import router as consumers_router
@@ -91,14 +93,12 @@ from routes.payments import router as payments_router
 from routes.export import router as export_router
 from utils.auth import hash_password, verify_password, get_current_user
 
-# If your other routers (auth, consumers, etc.) do NOT have '/api' inside their own files, 
-# you might need to add prefix="/api" back to them. 
-# But since we added prefix='/api/bills' directly inside bills.py, we mount them directly here.
-app.include_router(auth_router)
-app.include_router(consumers_router)
-app.include_router(bills_router) 
-app.include_router(payments_router)
-app.include_router(export_router)
+# Add the prefix="/api" back to everything EXCEPT bills_router
+app.include_router(auth_router, prefix="/api")
+app.include_router(consumers_router, prefix="/api")
+app.include_router(bills_router)  # <-- Leave bills alone, it already has prefix='/api/bills' inside its own file
+app.include_router(payments_router, prefix="/api")
+app.include_router(export_router, prefix="/api")
 
 # --- 7. ENDPOINTS ---
 
