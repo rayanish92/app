@@ -21,7 +21,7 @@ const Farmers = () => {
     try {
       // Fetch both Farmers and Bills to aggregate the data
       const [fRes, bRes] = await Promise.all([
-        axios.get(`${API_URL}/api/consumers`, { withCredentials: true }),
+        axios.get(`${API_URL}/api/farmers`, { withCredentials: true }),
         axios.get(`${API_URL}/api/bills`, { withCredentials: true })
       ]);
       
@@ -90,10 +90,10 @@ const Farmers = () => {
     try {
       if (editingFarmer) {
         const id = editingFarmer._id || editingFarmer.id;
-        await axios.put(`${API_URL}/api/consumers/${id}`, formData, { withCredentials: true });
+        await axios.put(`${API_URL}/api/farmers/${id}`, formData, { withCredentials: true });
         toast.success('Farmer updated');
       } else {
-        await axios.post(`${API_URL}/api/consumers`, formData, { withCredentials: true });
+        await axios.post(`${API_URL}/api/farmers`, formData, { withCredentials: true });
         toast.success('Farmer added');
       }
       setDialogOpen(false); 
@@ -108,7 +108,7 @@ const Farmers = () => {
     if (!window.confirm(`Are you sure you want to delete ${farmer.name}?`)) return;
     try {
       const id = farmer._id || farmer.id;
-      await axios.delete(`${API_URL}/api/consumers/${id}`, { withCredentials: true });
+      await axios.delete(`${API_URL}/api/farmers/${id}`, { withCredentials: true });
       toast.success('Farmer deleted');
       await fetchData();
     } catch (error) { 
