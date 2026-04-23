@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
-# --- 2. MASTER CATEGORY DATA ---
+# --- 2. MASTER PROJECT DATA ---
 TAX_CATEGORIES = [
     "boro chas tax",
     "boro seed water tax",
@@ -55,8 +55,7 @@ DB_NAME = os.environ.get('DB_NAME', 'water_billing')
 client = AsyncIOMotorClient(MONGO_URL)
 db = client[DB_NAME]
 
-app = FastAPI(title="Water Tracker API")
-app.state.db = db
+app = FastAPI(title="Water Tracker Master API")
 
 # --- 5. ERROR HANDLING & CORS ---
 @app.exception_handler(RequestValidationError)
@@ -85,14 +84,14 @@ app.include_router(bills_router, prefix="/api")
 app.include_router(payments_router, prefix="/api")
 app.include_router(export_router, prefix="/api")
 
-# --- 7. CORE LOGIC ---
+# --- 7. ENDPOINTS ---
 
 @app.get("/health")
-async def health(): return {"status": "ok", "db": DB_NAME}
+async def health(): return {"status": "online", "db": DB_NAME}
 
 @app.get('/api/rate-config')
 async def get_rate_config(request: Request, category: Optional[str] = None):
-    # FIX: Targets the specific category for price lookup to avoid "Mustard" default
+    # CRITICAL: Specifically targets the category requested for lookup to prevent "Mustard Default"
     target = category if category else TAX_CATEGORIES[0]
     config = await db.rate_config.find_one({"category": target}, {'_id': 0})
     if not config:
@@ -105,7 +104,7 @@ async def get_rate_config(request: Request, category: Optional[str] = None):
 @app.put('/api/rate-config')
 async def update_rate_config(config: RateConfigUpdate, request: Request):
     await get_current_user(request, db)
-    # FIX: Update by category so Boro rates don't overwrite Potato rates
+    # Update only the specific category rate using upsert
     await db.rate_config.update_one({'category': config.category}, {'$set': config.model_dump()}, upsert=True)
     return config.model_dump()
 
@@ -130,14 +129,13 @@ async def send_bill_notification(sms: BillSMSRequest, request: Request):
     await get_current_user(request, db)
     consumer = await db.consumers.find_one({'id': sms.consumer_id})
     bengali_cat = BENGALI_CAT_MAP.get(sms.category.lower(), "জলের বিল")
-    msg = f"নমস্কার {consumer['name']}, বিল বিভাগ: {bengali_cat}\nপরিমাণ: ₹{sms.amount}\nধন্যবাদ।"
+    msg = f"নমস্কার {consumer['name']}, বিভাগ: {bengali_cat}\nপরিমাণ: ₹{sms.amount}\nধন্যবাদ।"
     
     api_key = os.environ.get('FAST2SMS_API_KEY')
     if api_key:
         requests.post("https://www.fast2sms.com/dev/bulkV2", 
             json={"route": "q", "message": msg, "language": "unicode", "numbers": consumer['phone']},
             headers={"authorization": api_key, "Content-Type": "application/json"}, timeout=10)
-            
     return {'sms_status': 'Sent', 'whatsapp_url': f"https://wa.me/91{consumer['phone']}?text={requests.utils.quote(msg)}"}
 
 @app.on_event('startup')
