@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
+import { useNavigate } from 'react-router-dom';
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { 
@@ -15,6 +16,8 @@ import { toast } from 'sonner';
 const API_URL = process.env.REACT_APP_BACKEND_URL;
 
 const Dashboard = () => {
+  const navigate = useNavigate();
+  
   const [stats, setStats] = useState({
     total_farmers: 0,
     total_bills: 0,
@@ -31,7 +34,6 @@ const Dashboard = () => {
         withCredentials: true
       });
       
-      // Ensure we are setting the data exactly as the backend sends it
       setStats({
         total_farmers: data.total_farmers || 0,
         total_bills: data.total_bills || 0,
@@ -53,46 +55,53 @@ const Dashboard = () => {
 
   const statCards = [
     {
-      title: "Total farmers",
+      title: "Total Farmers",
       value: stats.total_farmers,
       icon: <Users size={24} weight="light" />,
       color: "text-blue-600",
-      bg: "bg-blue-50"
+      bg: "bg-blue-50",
+      onClick: () => navigate('/farmers'),
+      clickable: true
     },
     {
       title: "Total Bills",
       value: stats.total_bills,
       icon: <FileText size={24} weight="light" />,
       color: "text-purple-600",
-      bg: "bg-purple-50"
+      bg: "bg-purple-50",
+      onClick: () => navigate('/bills'),
+      clickable: true
     },
     {
       title: "Total Amount",
       value: `₹${stats.total_amount.toLocaleString()}`,
       icon: <CurrencyInr size={24} weight="light" />,
       color: "text-slate-700",
-      bg: "bg-slate-50"
+      bg: "bg-slate-50",
+      clickable: false
     },
     {
       title: "Collected",
       value: `₹${stats.total_paid.toLocaleString()}`,
       icon: <CheckCircle size={24} weight="light" />,
       color: "text-green-600",
-      bg: "bg-green-50"
+      bg: "bg-green-50",
+      clickable: false
     },
     {
       title: "Pending Dues",
       value: `₹${stats.total_due.toLocaleString()}`,
       icon: <WarningCircle size={24} weight="light" />,
       color: "text-destructive",
-      bg: "bg-red-50"
+      bg: "bg-red-50",
+      clickable: false
     }
   ];
 
   if (loading && stats.total_farmers === 0) {
     return (
       <div className="flex flex-col items-center justify-center p-12 space-y-4">
-        <div className="animate-spin text-primary">
+        <div className="animate-spin text-[#051039]">
           <ArrowsClockwise size={32} />
         </div>
         <p className="text-sm text-muted-foreground font-light">Loading statistics...</p>
@@ -101,13 +110,13 @@ const Dashboard = () => {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 max-w-7xl mx-auto p-4">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="font-heading text-3xl font-light tracking-tight text-foreground">
+          <h1 className="font-heading text-3xl font-light tracking-tight text-[#051039]">
             Dashboard
           </h1>
-          <p className="mt-1 text-sm text-muted-foreground">
+          <p className="mt-1 text-sm text-slate-400 font-medium uppercase tracking-widest">
             Overview of your water management system
           </p>
         </div>
@@ -116,47 +125,74 @@ const Dashboard = () => {
           size="sm" 
           onClick={fetchStats}
           disabled={loading}
-          className="h-10 px-4"
+          className="h-10 px-4 rounded-xl border-slate-200 hover:bg-slate-50"
         >
           <ArrowsClockwise size={16} className={`mr-2 ${loading ? 'animate-spin' : ''}`} />
           Refresh
         </Button>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {statCards.map((card, idx) => (
-          <Card key={idx} className="border border-border overflow-hidden shadow-sm hover:shadow-md transition-shadow">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium uppercase tracking-wider text-muted-foreground">
-                {card.title}
-              </CardTitle>
-              <div className={`p-2 rounded-lg ${card.bg} ${card.color}`}>
-                {card.icon}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {statCards.map((card, idx) => {
+          // Inner card component
+          const CardInner = (
+            <Card 
+              className={`border border-border overflow-hidden rounded-[2rem] shadow-sm transition-all duration-200 h-full ${
+                card.clickable 
+                  ? 'hover:shadow-xl hover:-translate-y-1 hover:border-[#051039]/20' 
+                  : 'hover:shadow-md'
+              }`}
+            >
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 pt-6 px-6">
+                <CardTitle className="text-xs font-bold uppercase tracking-wider text-slate-400">
+                  {card.title}
+                </CardTitle>
+                <div className={`p-3 rounded-2xl ${card.bg} ${card.color}`}>
+                  {card.icon}
+                </div>
+              </CardHeader>
+              <CardContent className="px-6 pb-6">
+                <div className="text-3xl font-bold text-slate-800 tracking-tight mt-2">
+                  {card.value}
+                </div>
+              </CardContent>
+            </Card>
+          );
+
+          // If clickable, wrap in a div that handles the click
+          if (card.clickable) {
+            return (
+              <div 
+                key={idx} 
+                onClick={card.onClick} 
+                className="cursor-pointer h-full"
+                role="button"
+                tabIndex={0}
+              >
+                {CardInner}
               </div>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-heading font-light tracking-tight">
-                {card.value}
-              </div>
-            </CardContent>
-          </Card>
-        ))}
+            );
+          }
+
+          // If not clickable, render normally
+          return <div key={idx} className="h-full">{CardInner}</div>;
+        })}
       </div>
 
       {/* Summary Footer */}
-      <div className="mt-8 p-6 bg-primary/5 rounded-2xl border border-primary/10">
-        <div className="flex flex-col md:flex-row items-center justify-between gap-4 text-center md:text-left">
+      <div className="mt-8 p-8 bg-blue-50/50 rounded-[2rem] border border-blue-100">
+        <div className="flex flex-col md:flex-row items-center justify-between gap-6 text-center md:text-left">
           <div>
-            <h3 className="font-medium text-primary">Billing Efficiency</h3>
-            <p className="text-sm text-muted-foreground">
-              You have collected {stats.total_amount > 0 
+            <h3 className="font-bold text-lg text-[#051039]">Billing Efficiency</h3>
+            <p className="text-sm font-medium text-slate-500 mt-1">
+              You have collected <span className="text-emerald-600 font-bold">{stats.total_amount > 0 
                 ? ((stats.total_paid / stats.total_amount) * 100).toFixed(1) 
-                : 0}% of total billed amounts.
+                : 0}%</span> of total billed amounts.
             </p>
           </div>
-          <div className="h-2 w-full md:w-64 bg-slate-200 rounded-full overflow-hidden">
+          <div className="h-3 w-full md:w-72 bg-slate-200 rounded-full overflow-hidden shadow-inner">
             <div 
-              className="h-full bg-green-500 transition-all duration-1000" 
+              className="h-full bg-emerald-500 transition-all duration-1000 ease-out rounded-full" 
               style={{ width: `${stats.total_amount > 0 ? (stats.total_paid / stats.total_amount) * 100 : 0}%` }}
             />
           </div>
