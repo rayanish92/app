@@ -7,6 +7,7 @@ from utils.auth import get_current_user
 import logging
 
 logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix='/api/payments', tags=['payments'])
 
 class PaymentCreate(BaseModel):
@@ -16,7 +17,6 @@ class PaymentCreate(BaseModel):
     category: str
     notes: str = ""
 
-# --- BULLETPROOF ID FINDER ---
 def build_id_query(id_val):
     try:
         return {"_id": ObjectId(str(id_val))}
@@ -44,75 +44,82 @@ async def update_consumer_due(db, consumer_id):
 
 @router.get('')
 async def get_payments(request: Request):
-    db = request.app.state.db
-    await get_current_user(request, db)
-    payments = await db.payments.find().sort('created_at', -1).to_list(1000)
-    for p in payments:
-        p['_id'] = str(p['_id'])
-        if 'id' not in p: p['id'] = p['_id']
-    return {'items': payments}
+    try:
+        db = request.app.state.db
+        
+        # FIX: Restored the security check. Your app likely requires this to let data through!
+        await get_current_user(request, db)
+        
+        payments = await db.payments.find().sort('created_at', -1).to_list(length=1000)
+        for p in payments:
+            p['_id'] = str(p['_id'])
+            if 'id' not in p: p['id'] = p['_id']
+            
+        return {'items': payments}
+    except Exception as e:
+        # FIX: Sends the exact Python crash directly to the frontend
+        raise HTTPException(status_code=500, detail=f"Backend Crash: {str(e)}")
 
 @router.post('')
 async def create_payment(payment: PaymentCreate, request: Request):
-    db = request.app.state.db
-    await get_current_user(request, db)
+    try:
+        db = request.app.state.db
+        await get_current_user(request, db) # FIX: Restored security check
 
-    # 1. FIND THE BILL SAFELY
-    bill = await db.bills.find_one(build_id_query(payment.bill_id))
-    if not bill:
-        raise HTTPException(404, "Bill not found in database! Please refresh the page.")
+        bill = await db.bills.find_one(build_id_query(payment.bill_id))
+        if not bill:
+            raise HTTPException(404, "Bill not found in database! Please refresh the page.")
 
-    # 2. DO THE MATH
-    current_paid = float(bill.get('paid', 0.0))
-    total_amount = float(bill.get('amount', 0.0))
-    
-    new_paid = current_paid + payment.amount
-    new_due = total_amount - new_paid
+        current_paid = float(bill.get('paid', 0.0))
+        total_amount = float(bill.get('amount', 0.0))
+        
+        new_paid = current_paid + payment.amount
+        new_due = total_amount - new_paid
 
-    # Prevent negative dues if they overpay
-    if new_due < 0: new_due = 0.0
+        if new_due < 0: new_due = 0.0
 
-    # 3. UPDATE THE BILL
-    await db.bills.update_one(
-        build_id_query(payment.bill_id),
-        {"$set": {"paid": round(new_paid, 2), "due": round(new_due, 2)}}
-    )
-
-    # 4. SAVE THE PAYMENT RECORD
-    payment_doc = payment.model_dump()
-    payment_doc['consumer_id'] = bill.get('consumer_id')
-    payment_doc['consumer_name'] = bill.get('consumer_name', 'Unknown Farmer')
-    payment_doc['created_at'] = datetime.now(timezone.utc)
-    
-    result = await db.payments.insert_one(payment_doc)
-
-    # 5. UPDATE MASTER FARMER DEBT
-    if bill.get('consumer_id'):
-        await update_consumer_due(db, bill.get('consumer_id'))
-
-    return {"id": str(result.inserted_id), "status": "success"}
-
-@router.delete('/{payment_id}')
-async def delete_payment(payment_id: str, request: Request):
-    db = request.app.state.db
-    await get_current_user(request, db)
-
-    payment = await db.payments.find_one(build_id_query(payment_id))
-    if not payment:
-        raise HTTPException(404, "Payment not found")
-
-    # Reverse the math on the bill
-    bill = await db.bills.find_one(build_id_query(payment['bill_id']))
-    if bill:
-        new_paid = float(bill.get('paid', 0)) - float(payment['amount'])
-        if new_paid < 0: new_paid = 0
-        new_due = float(bill.get('amount', 0)) - new_paid
         await db.bills.update_one(
-            build_id_query(payment['bill_id']),
+            build_id_query(payment.bill_id),
             {"$set": {"paid": round(new_paid, 2), "due": round(new_due, 2)}}
         )
+
+        payment_doc = payment.model_dump()
+        payment_doc['consumer_id'] = bill.get('consumer_id')
+        payment_doc['consumer_name'] = bill.get('consumer_name', 'Unknown Farmer')
+        payment_doc['created_at'] = datetime.now(timezone.utc)
+        
+        result = await db.payments.insert_one(payment_doc)
+
         if bill.get('consumer_id'):
             await update_consumer_due(db, bill.get('consumer_id'))
 
-    await db.payments.delete_one(build_id_query(payment_id))
-    return {"status": "success"}
+        return {"id": str(result.inserted_id), "status": "success"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Backend Crash: {str(e)}")
+
+@router.delete('/{payment_id}')
+async def delete_payment(payment_id: str, request: Request):
+    try:
+        db = request.app.state.db
+        await get_current_user(request, db) # FIX: Restored security check
+
+        payment = await db.payments.find_one(build_id_query(payment_id))
+        if not payment:
+            raise HTTPException(404, "Payment not found")
+
+        bill = await db.bills.find_one(build_id_query(payment['bill_id']))
+        if bill:
+            new_paid = float(bill.get('paid', 0)) - float(payment['amount'])
+            if new_paid < 0: new_paid = 0
+            new_due = float(bill.get('amount', 0)) - new_paid
+            await db.bills.update_one(
+                build_id_query(payment['bill_id']),
+                {"$set": {"paid": round(new_paid, 2), "due": round(new_due, 2)}}
+            )
+            if bill.get('consumer_id'):
+                await update_consumer_due(db, bill.get('consumer_id'))
+
+        await db.payments.delete_one(build_id_query(payment_id))
+        return {"status": "success"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Backend Crash: {str(e)}")
