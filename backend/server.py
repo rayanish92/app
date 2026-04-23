@@ -53,7 +53,7 @@ class BillSMSRequest(BaseModel):
 
 # --- 4. DATABASE CONNECTION & LIFESPAN ---
 MONGO_URL = os.environ.get('MONGO_URL')
-DB_NAME = os.environ.get('DB_NAME', 'water_billing')
+DB_NAME = os.environ.get('DB_NAME', 'water_bill_tracker')
 client = AsyncIOMotorClient(MONGO_URL)
 db = client[DB_NAME]
 
