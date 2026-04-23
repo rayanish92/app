@@ -134,6 +134,7 @@ async def get_dashboard_stats(request: Request):
     res = totals[0] if totals else {}
     return {
         'total_consumers': await db.consumers.count_documents({}),
+        'total_bills': await db.bills.count_documents({}), # <-- ADD THIS LINE!
         'total_amount': round(res.get('total_amount', 0), 2),
         'total_paid': round(res.get('total_paid', 0), 2),
         'total_due': round(res.get('total_due', 0), 2)
