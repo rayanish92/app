@@ -16,7 +16,7 @@ const Layout = () => {
 
   const navItems = [
     { path: '/dashboard', label: 'Dashboard', icon: ChartLine },
-    { path: '/consumers', label: 'Consumers', icon: Users },
+    { path: '/farmers', label: 'farmers', icon: Users },
     { path: '/bills', label: 'Bills', icon: FileText },
     { path: '/payments', label: 'Payments', icon: CurrencyDollar },
     { path: '/sms', label: 'SMS', icon: ChatCircleText }
