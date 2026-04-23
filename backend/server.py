@@ -7,10 +7,12 @@ from dotenv import load_dotenv
 from pathlib import Path
 import os
 import logging
-import requests
+import httpx  # Make sure to run: pip install httpx
+import urllib.parse
 from datetime import datetime, timezone
 from pydantic import BaseModel
 from typing import Optional, List
+from contextlib import asynccontextmanager
 
 # --- 1. SETUP & LOGGING ---
 logging.basicConfig(level=logging.INFO)
@@ -44,18 +46,26 @@ class RateConfigUpdate(BaseModel):
 
 class BillSMSRequest(BaseModel):
     consumer_id: str
-    land_area: str    
+    land_area: str      
     amount: float      
-    period: str       
+    period: str        
     category: str 
 
-# --- 4. DATABASE CONNECTION ---
+# --- 4. DATABASE CONNECTION & LIFESPAN ---
 MONGO_URL = os.environ.get('MONGO_URL')
 DB_NAME = os.environ.get('DB_NAME', 'water_billing')
 client = AsyncIOMotorClient(MONGO_URL)
 db = client[DB_NAME]
 
-app = FastAPI(title="Water Tracker API")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup logic: Ensures the email index is unique
+    await db.users.create_index('email', unique=True)
+    yield
+    # Shutdown logic
+    client.close()
+
+app = FastAPI(title="Water Tracker API", lifespan=lifespan)
 app.state.db = db
 
 # --- 5. ERROR HANDLING & CORS ---
@@ -66,7 +76,8 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://water-management-frontend-bkqh.onrender.com"], 
+    # Added localhost so you can easily test locally alongside Render
+    allow_origins=["https://water-management-frontend-bkqh.onrender.com", "http://localhost:3000", "http://localhost:5173"], 
     allow_credentials=True, 
     allow_methods=["*"],
     allow_headers=["*"],
@@ -80,11 +91,14 @@ from routes.payments import router as payments_router
 from routes.export import router as export_router
 from utils.auth import hash_password, verify_password, get_current_user
 
-app.include_router(auth_router, prefix="/api")
-app.include_router(consumers_router, prefix="/api")
-app.include_router(bills_router, prefix="/api")
-app.include_router(payments_router, prefix="/api")
-app.include_router(export_router, prefix="/api")
+# If your other routers (auth, consumers, etc.) do NOT have '/api' inside their own files, 
+# you might need to add prefix="/api" back to them. 
+# But since we added prefix='/api/bills' directly inside bills.py, we mount them directly here.
+app.include_router(auth_router)
+app.include_router(consumers_router)
+app.include_router(bills_router) 
+app.include_router(payments_router)
+app.include_router(export_router)
 
 # --- 7. ENDPOINTS ---
 
@@ -94,7 +108,6 @@ async def health():
 
 @app.get('/api/rate-config')
 async def get_rate_config(request: Request, category: Optional[str] = None):
-    # FIXED: Targets the requested category to stop calculation errors
     target = category if category else TAX_CATEGORIES[0]
     config = await db.rate_config.find_one({"category": target}, {'_id': 0})
     if not config:
@@ -107,7 +120,6 @@ async def get_rate_config(request: Request, category: Optional[str] = None):
 @app.put('/api/rate-config')
 async def update_rate_config(config: RateConfigUpdate, request: Request):
     await get_current_user(request, db)
-    # FIXED: Updates specific category rate only
     await db.rate_config.update_one({'category': config.category}, {'$set': config.model_dump()}, upsert=True)
     return config.model_dump()
 
@@ -130,17 +142,28 @@ async def get_dashboard_stats(request: Request):
 @app.post('/api/sms/send-bill')
 async def send_bill_notification(sms: BillSMSRequest, request: Request):
     await get_current_user(request, db)
+    
+    # 1. Ensure we find the consumer
     consumer = await db.consumers.find_one({'id': sms.consumer_id})
+    if not consumer: 
+        raise HTTPException(404, "Consumer not found")
+    
+    # 2. Format the message
     bengali_cat = BENGALI_CAT_MAP.get(sms.category.lower(), "জলের বিল")
     msg = f"নমস্কার {consumer['name']}, বিভাগ: {bengali_cat}\nপরিমাণ: ₹{sms.amount}\nধন্যবাদ।"
     
+    # 3. Send SMS asynchronously so the server doesn't freeze
     api_key = os.environ.get('FAST2SMS_API_KEY')
     if api_key:
-        requests.post("https://www.fast2sms.com/dev/bulkV2", 
-            json={"route": "q", "message": msg, "numbers": consumer['phone']},
-            headers={"authorization": api_key, "Content-Type": "application/json"}, timeout=10)
-    return {'sms_status': 'Sent', 'whatsapp_url': f"https://wa.me/91{consumer['phone']}?text={requests.utils.quote(msg)}"}
-
-@app.on_event('startup')
-async def startup():
-    await db.users.create_index('email', unique=True)
+        async with httpx.AsyncClient() as async_client:
+            await async_client.post(
+                "https://www.fast2sms.com/dev/bulkV2", 
+                json={"route": "q", "message": msg, "numbers": consumer['phone']},
+                headers={"authorization": api_key, "Content-Type": "application/json"}, 
+                timeout=10
+            )
+            
+    # 4. Generate the WhatsApp link
+    whatsapp_url = f"https://wa.me/91{consumer['phone']}?text={urllib.parse.quote(msg)}"
+    
+    return {'sms_status': 'Sent', 'whatsapp_url': whatsapp_url}
