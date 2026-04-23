@@ -8,6 +8,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+# The prefix handles the base URL
 router = APIRouter(prefix='/api/payments', tags=['payments'])
 
 class PaymentCreate(BaseModel):
@@ -42,13 +43,13 @@ async def update_consumer_due(db, consumer_id):
     except Exception as e:
         logger.error(f"Failed to update consumer due: {str(e)}")
 
+# --- THE FIX: Accepts both /api/payments and /api/payments/ ---
 @router.get('')
+@router.get('/')
 async def get_payments(request: Request):
     try:
         db = request.app.state.db
-        
-        # FIX: Restored the security check. Your app likely requires this to let data through!
-        await get_current_user(request, db)
+        await get_current_user(request, db) # Security check
         
         payments = await db.payments.find().sort('created_at', -1).to_list(length=1000)
         for p in payments:
@@ -57,14 +58,15 @@ async def get_payments(request: Request):
             
         return {'items': payments}
     except Exception as e:
-        # FIX: Sends the exact Python crash directly to the frontend
+        logger.error(f"Error fetching payments: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Backend Crash: {str(e)}")
 
 @router.post('')
+@router.post('/')
 async def create_payment(payment: PaymentCreate, request: Request):
     try:
         db = request.app.state.db
-        await get_current_user(request, db) # FIX: Restored security check
+        await get_current_user(request, db)
 
         bill = await db.bills.find_one(build_id_query(payment.bill_id))
         if not bill:
@@ -98,10 +100,11 @@ async def create_payment(payment: PaymentCreate, request: Request):
         raise HTTPException(status_code=500, detail=f"Backend Crash: {str(e)}")
 
 @router.delete('/{payment_id}')
+@router.delete('/{payment_id}/')
 async def delete_payment(payment_id: str, request: Request):
     try:
         db = request.app.state.db
-        await get_current_user(request, db) # FIX: Restored security check
+        await get_current_user(request, db)
 
         payment = await db.payments.find_one(build_id_query(payment_id))
         if not payment:
