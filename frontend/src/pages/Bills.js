@@ -58,7 +58,6 @@ const Bills = () => {
       const { data } = await axios.get(`${API_URL}/api/rate-config?category=${cat}`, { withCredentials: true });
       setRateConfig(data);
     } catch (e) {
-      // Fallback if no rate exists for this category yet
       setRateConfig({ rate_per_bigha: 100, rate_per_katha: 5, katha_to_bigha_ratio: 20, category: cat });
     }
   };
@@ -66,7 +65,6 @@ const Bills = () => {
   const handleRateUpdate = async (e) => {
     e.preventDefault();
     try {
-      // Must use parseFloat to prevent 422 errors from FastAPI
       const payload = {
         ...rateConfig,
         rate_per_bigha: parseFloat(rateConfig.rate_per_bigha),
@@ -76,7 +74,7 @@ const Bills = () => {
       await axios.put(`${API_URL}/api/rate-config`, payload, { withCredentials: true });
       toast.success(`Rates for ${rateConfig.category.toUpperCase()} updated successfully`);
       setRateDialogOpen(false);
-      fetchData(); // Refresh bills just in case
+      fetchData(); 
     } catch (e) { 
       toast.error('Update failed. Please use valid numbers.'); 
     }
@@ -85,15 +83,29 @@ const Bills = () => {
   // --- BILL CREATION & EDITING LOGIC ---
   const handleSubmit = async (e) => {
     e.preventDefault();
+    
+    // SAFETY CHECKS (New Fixes)
+    if (!formData.consumer_id) return toast.error("Please select a farmer.");
+    if (rateConfig.katha_to_bigha_ratio === 0) return toast.error("Katha ratio in settings cannot be 0.");
+
     try {
       await axios.post(`${API_URL}/api/bills`, formData, { withCredentials: true });
       toast.success('Bill Created & Calculated');
       setDialogOpen(false);
-      // Reset form
       setFormData({ consumer_id: '', land_used_bigha: 0, land_used_katha: 0, billing_period: '', category: TAX_CATEGORIES[0] });
       fetchData();
     } catch (e) { 
-      toast.error('Failed to create bill. Ensure all fields are filled.'); 
+      // SMARTER ERROR HANDLING (New Fixes)
+      console.error("Backend Error:", e.response?.data);
+      const backendMessage = e.response?.data?.detail;
+      
+      if (Array.isArray(backendMessage)) {
+         toast.error(`Validation Error: ${backendMessage[0].loc[1]} is missing or invalid`);
+      } else if (typeof backendMessage === 'string') {
+         toast.error(`Error: ${backendMessage}`);
+      } else {
+         toast.error('Server error. Press F12 and check the console.');
+      }
     }
   };
 
@@ -112,7 +124,6 @@ const Bills = () => {
   const handleEdit = async (e) => {
     e.preventDefault();
     try {
-      // FIX: Check for _id (MongoDB) or id
       const billId = editingBill._id || editingBill.id; 
       await axios.put(`${API_URL}/api/bills/${billId}`, formData, { withCredentials: true });
       toast.success('Record updated & recalculated successfully');
@@ -154,8 +165,7 @@ const Bills = () => {
   };
 
   const sendWhatsApp = (bill) => {
-    // We fetch phone from the consumers list to avoid sending it with every bill object
-    const consumer = consumers.find(c => c.id === bill.consumer_id);
+    const consumer = consumers.find(c => (c._id || c.id) === bill.consumer_id);
     if (!consumer?.phone) {
       return toast.error("No phone number found for this farmer.");
     }
@@ -243,17 +253,16 @@ const Bills = () => {
                 <span className="text-[10px] bg-blue-50 text-[#051039] px-3 py-1 rounded-full uppercase font-black border border-blue-100">
                   {bill.category || 'WATER TAX'}
                 </span>
-                {/* Now using the consumer_name directly from the new backend response */}
                 <h3 className="text-xl font-bold text-slate-800 mt-3 leading-tight truncate pr-2">{bill.consumer_name || 'Unknown Farmer'}</h3>
                 <p className="text-xs font-bold text-slate-400 mt-0.5 uppercase tracking-tighter">Period: {bill.billing_period}</p>
               </div>
               
               {/* ACTION BUTTONS (Hover to reveal) */}
               <div className="flex flex-col gap-1 opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity bg-white pl-2">
-                <Button variant="ghost" size="sm" onClick={() => sendWhatsApp(bill)} title="WhatsApp" className="text-emerald-500 rounded-full h-8 w-8 p-0"><WhatsappLogo size={22} weight="fill"/></Button>
-                <Button variant="ghost" size="sm" onClick={() => handleSendSMS(bill)} title="SMS" className="text-blue-500 rounded-full h-8 w-8 p-0"><ChatCircleDots size={22} weight="fill"/></Button>
-                <Button variant="ghost" size="sm" onClick={() => openEditDialog(bill)} title="Edit" className="text-slate-400 hover:text-[#051039] rounded-full h-8 w-8 p-0"><Pencil size={20}/></Button>
-                <Button variant="ghost" size="sm" onClick={() => handleDelete(bill)} title="Delete" className="text-rose-400 hover:text-rose-600 rounded-full h-8 w-8 p-0"><Trash size={20}/></Button>
+                <Button type="button" variant="ghost" size="sm" onClick={() => sendWhatsApp(bill)} title="WhatsApp" className="text-emerald-500 rounded-full h-8 w-8 p-0"><WhatsappLogo size={22} weight="fill"/></Button>
+                <Button type="button" variant="ghost" size="sm" onClick={() => handleSendSMS(bill)} title="SMS" className="text-blue-500 rounded-full h-8 w-8 p-0"><ChatCircleDots size={22} weight="fill"/></Button>
+                <Button type="button" variant="ghost" size="sm" onClick={() => openEditDialog(bill)} title="Edit" className="text-slate-400 hover:text-[#051039] rounded-full h-8 w-8 p-0"><Pencil size={20}/></Button>
+                <Button type="button" variant="ghost" size="sm" onClick={() => handleDelete(bill)} title="Delete" className="text-rose-400 hover:text-rose-600 rounded-full h-8 w-8 p-0"><Trash size={20}/></Button>
               </div>
             </div>
             
@@ -280,7 +289,8 @@ const Bills = () => {
             <Select onValueChange={(v) => setFormData({...formData, consumer_id: v})} required>
                 <SelectTrigger className="h-14 rounded-2xl bg-slate-50 border-none px-6 text-lg"><SelectValue placeholder="Identify Farmer" /></SelectTrigger>
                 <SelectContent className="rounded-xl border-none shadow-2xl max-h-60">
-                  {consumers.map(c => <SelectItem key={c.id} value={c.id}>{c.name} ({c.phone})</SelectItem>)}
+                  {/* FIX: Properly reading the ID of the consumer here */}
+                  {consumers.map(c => <SelectItem key={c._id || c.id} value={c._id || c.id}>{c.name} ({c.phone})</SelectItem>)}
                 </SelectContent>
             </Select>
 
