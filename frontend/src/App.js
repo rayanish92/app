@@ -7,7 +7,7 @@ import { Toaster } from './components/ui/sonner';
 import MobileLayout from './components/MobileLayout';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
-import Consumers from './pages/Farmers';
+import Farmers from './pages/Farmers';
 import Bills from './pages/Bills';
 import Payments from './pages/Payments';
 import SMS from './pages/SMS';
@@ -34,7 +34,7 @@ function App() {
           >
             <Route index element={<Navigate to="/dashboard" replace />} />
             <Route path="dashboard" element={<Dashboard />} />
-            <Route path="consumers" element={<Consumers />} />
+            <Route path="farmers" element={<Consumers />} />
             <Route path="bills" element={<Bills />} />
             <Route path="payments" element={<Payments />} />
             <Route path="sms" element={<SMS />} />
