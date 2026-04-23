@@ -76,7 +76,7 @@ from routes.consumers import router as consumers_router
 from routes.bills import router as bills_router
 from routes.payments import router as payments_router
 from routes.export import router as export_router
-from utils.auth import get_current_user
+from utils.auth import hash_password, get_current_user
 
 app.include_router(auth_router, prefix="/api")
 app.include_router(consumers_router, prefix="/api")
@@ -84,25 +84,14 @@ app.include_router(bills_router, prefix="/api")
 app.include_router(payments_router, prefix="/api")
 app.include_router(export_router, prefix="/api")
 
-# --- 7. BILINGUAL SMS LOGIC ---
-def generate_bill_templates(name, area, amount, period, category):
-    clean_cat = category.lower() if category else "others water tax"
-    bengali_cat = BENGALI_CAT_MAP.get(clean_cat, "জলের ট্যাক্স")
-    return (
-        f"নমস্কার {name}, আপনার বিল।\n"
-        f"বিভাগ: {bengali_cat}\n"
-        f"পরিমাণ: ₹{amount}\n"
-        f"ধন্যবাদ।"
-    )
-
-# --- 8. ENDPOINTS ---
+# --- 7. CORE LOGIC ---
 
 @app.get("/health")
 async def health(): return {"status": "ok", "db": DB_NAME}
 
 @app.get('/api/rate-config')
 async def get_rate_config(request: Request, category: Optional[str] = None):
-    # FIXED: Specifically targets the category requested for lookup
+    # FIX: Fetch the specific rate document for the selected category
     target = category if category else TAX_CATEGORIES[0]
     config = await db.rate_config.find_one({"category": target}, {'_id': 0})
     if not config:
@@ -115,7 +104,7 @@ async def get_rate_config(request: Request, category: Optional[str] = None):
 @app.put('/api/rate-config')
 async def update_rate_config(config: RateConfigUpdate, request: Request):
     await get_current_user(request, db)
-    # FIXED: Upsert by category to store independent rates
+    # FIX: Update only the specific category rate using upsert
     await db.rate_config.update_one({'category': config.category}, {'$set': config.model_dump()}, upsert=True)
     return config.model_dump()
 
@@ -139,10 +128,16 @@ async def get_dashboard_stats(request: Request):
 async def send_bill_notification(sms: BillSMSRequest, request: Request):
     await get_current_user(request, db)
     consumer = await db.consumers.find_one({'id': sms.consumer_id})
-    msg = generate_bill_templates(consumer['name'], sms.land_area, sms.amount, sms.period, sms.category)
+    bengali_cat = BENGALI_CAT_MAP.get(sms.category.lower(), sms.category)
+    msg = f"নমস্কার {consumer['name']}, বিল বিভাগ: {bengali_cat}\nপরিমাণ: ₹{sms.amount}\nধন্যবাদ।"
+    
     api_key = os.environ.get('FAST2SMS_API_KEY')
     if api_key:
         requests.post("https://www.fast2sms.com/dev/bulkV2", 
             json={"route": "q", "message": msg, "language": "unicode", "numbers": consumer['phone']},
             headers={"authorization": api_key, "Content-Type": "application/json"}, timeout=10)
     return {'sms_status': 'Sent', 'whatsapp_url': f"https://wa.me/91{consumer['phone']}?text={requests.utils.quote(msg)}"}
+
+@app.on_event('startup')
+async def startup():
+    await db.users.create_index('email', unique=True)
