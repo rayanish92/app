@@ -5,7 +5,9 @@ import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '../components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
-import { Gear, Plus, Pencil, Trash, WhatsappLogo, ChatCircleDots, FileCsv, FilePdf } from '@phosphor-icons/react';
+import { 
+  Gear, Plus, Pencil, Trash, WhatsappLogo, ChatCircleDots, FileCsv, FilePdf 
+} from '@phosphor-icons/react';
 import { toast } from 'sonner';
 import { exportToCSV, exportToPDF } from '../lib/exportUtils';
 import { TAX_CATEGORIES } from '../lib/constants';
@@ -56,7 +58,7 @@ const Bills = () => {
   const handleRateUpdate = async (e) => {
     e.preventDefault();
     try {
-      // parseFloat prevents data type errors on the backend
+      // parseFloat ensures numeric data is sent to prevent backend validation errors
       const payload = {
         ...rateConfig,
         rate_per_bigha: parseFloat(rateConfig.rate_per_bigha),
@@ -66,18 +68,18 @@ const Bills = () => {
       await axios.put(`${API_URL}/api/rate-config`, payload, { withCredentials: true });
       toast.success(`Rates for ${rateConfig.category.toUpperCase()} saved`);
       setRateDialogOpen(false);
-    } catch (e) { toast.error('Failed to update rates'); }
+    } catch (e) { toast.error('Failed to update rates. Check inputs.'); }
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
       await axios.post(`${API_URL}/api/bills`, formData, { withCredentials: true });
-      toast.success('Bill generated');
+      toast.success('Bill generated successfully');
       setDialogOpen(false);
       resetForm();
       fetchData();
-    } catch (e) { toast.error('Check fields or rates'); }
+    } catch (e) { toast.error('Error creating bill. Verify category rates.'); }
   };
 
   const openEditDialog = (bill) => {
@@ -100,41 +102,43 @@ const Bills = () => {
     setFormData({ consumer_id: '', land_used_bigha: 0, land_used_katha: 0, billing_period: '', category: TAX_CATEGORIES[0] });
   };
 
-  if (loading) return <div className="p-12 text-center text-[#051039] font-bold">Connecting...</div>;
+  if (loading) return <div className="p-12 text-center text-[#051039] font-black">Syncing...</div>;
 
   return (
     <div className="space-y-6 p-4 max-w-7xl mx-auto">
+      {/* HEADER SECTION */}
       <div className="flex justify-between items-center border-b pb-4">
         <div>
           <h1 className="text-3xl font-light text-[#051039]">Bills</h1>
-          <p className="text-xs text-slate-400 font-bold uppercase tracking-widest">{bills.length} Total</p>
+          <p className="text-xs text-slate-400 font-bold uppercase tracking-widest">{bills.length} active bills</p>
         </div>
         <div className="flex gap-2">
           <Button variant="outline" size="sm" onClick={() => exportToCSV(bills.map(b => [b.consumer_name, b.category, b.amount, b.due]), ['Farmer', 'Category', 'Amount', 'Due'], 'bills.csv')}><FileCsv size={20} className="text-green-600"/></Button>
           <Dialog open={rateDialogOpen} onOpenChange={setRateDialogOpen}>
             <DialogTrigger asChild><Button variant="outline" size="icon" className="rounded-full"><Gear size={22}/></Button></DialogTrigger>
-            <DialogContent className="rounded-2xl">
-              <DialogHeader><DialogTitle>Category Rates</DialogTitle></DialogHeader>
+            <DialogContent className="rounded-2xl border-none shadow-2xl">
+              <DialogHeader><DialogTitle className="text-2xl font-bold text-[#051039]">Category Settings</DialogTitle></DialogHeader>
               <form onSubmit={handleRateUpdate} className="space-y-4">
-                <select className="w-full h-11 border rounded-xl px-4" value={rateConfig.category} onChange={(e) => handleRateCategorySwitch(e.target.value)}>
+                <select className="w-full h-11 border rounded-xl px-4 bg-slate-50" value={rateConfig.category} onChange={(e) => handleRateCategorySwitch(e.target.value)}>
                     {TAX_CATEGORIES.map(cat => <option key={cat} value={cat}>{cat.toUpperCase()}</option>)}
                 </select>
                 <div className="grid grid-cols-2 gap-3">
-                  <div><Label className="text-xs font-bold uppercase">Rate/Bigha</Label><Input type="number" step="0.01" value={rateConfig.rate_per_bigha} onChange={(e) => setRateConfig({...rateConfig, rate_per_bigha: e.target.value})} /></div>
-                  <div><Label className="text-xs font-bold uppercase">Rate/Katha</Label><Input type="number" step="0.01" value={rateConfig.rate_per_katha} onChange={(e) => setRateConfig({...rateConfig, rate_per_katha: e.target.value})} /></div>
+                  <div className="space-y-1"><Label className="text-[10px] font-bold uppercase">Rate/Bigha</Label><Input type="number" step="0.01" value={rateConfig.rate_per_bigha} onChange={(e) => setRateConfig({...rateConfig, rate_per_bigha: e.target.value})} /></div>
+                  <div className="space-y-1"><Label className="text-[10px] font-bold uppercase">Rate/Katha</Label><Input type="number" step="0.01" value={rateConfig.rate_per_katha} onChange={(e) => setRateConfig({...rateConfig, rate_per_katha: e.target.value})} /></div>
                 </div>
-                <div><Label className="text-xs font-bold uppercase">Land Ratio</Label><Input type="number" step="0.01" value={rateConfig.katha_to_bigha_ratio} onChange={(e) => setRateConfig({...rateConfig, katha_to_bigha_ratio: e.target.value})} /></div>
-                <Button type="submit" className="w-full h-12 bg-[#051039] text-white rounded-xl">Save Configuration</Button>
+                <div className="space-y-1"><Label className="text-[10px] font-bold uppercase">Katha to Bigha Ratio</Label><Input type="number" step="0.01" value={rateConfig.katha_to_bigha_ratio} onChange={(e) => setRateConfig({...rateConfig, katha_to_bigha_ratio: e.target.value})} /></div>
+                <Button type="submit" className="w-full h-12 bg-[#051039] text-white rounded-xl font-bold">Save Configuration</Button>
               </form>
             </DialogContent>
           </Dialog>
-          <Button onClick={() => { resetForm(); setDialogOpen(true); }} className="rounded-full h-12 w-12 bg-[#051039] text-white shadow-xl"><Plus size={28}/></Button>
+          <Button onClick={() => { resetForm(); setDialogOpen(true); }} className="rounded-full h-12 w-12 bg-[#051039] text-white shadow-xl transition-all"><Plus size={28}/></Button>
         </div>
       </div>
 
+      {/* BEAUTIFIED BILL CARDS */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {bills.map((bill) => (
-          <div key={bill.id} className="bg-white border p-6 rounded-[2rem] shadow-sm hover:shadow-xl transition-all group">
+          <div key={bill.id} className="bg-white border p-6 rounded-[2rem] shadow-sm hover:shadow-xl transition-all duration-300 group">
             <div className="flex justify-between items-start">
               <div className="flex-1">
                 {/* DYNAMIC CATEGORY BADGE (FIRST 2 WORDS) */}
@@ -152,32 +156,46 @@ const Bills = () => {
                 <Button variant="ghost" size="sm" onClick={() => axios.delete(`${API_URL}/api/bills/${bill.id}`, {withCredentials:true}).then(() => fetchData())} className="text-rose-500 rounded-full"><Trash size={20}/></Button>
               </div>
             </div>
-            <div className="mt-6 pt-4 border-t border-slate-50 grid grid-cols-2 gap-2">
-                <div><p className="text-[10px] font-bold text-slate-300 uppercase">Land / Bill</p><p className="text-sm font-bold text-slate-700">{bill.total_land_in_bigha} B / ₹{bill.amount}</p></div>
-                <div className="text-right"><p className="text-[10px] font-bold text-slate-300 uppercase">Paid / Due</p><p className="text-sm font-black text-emerald-600">₹{bill.paid} / <span className="text-rose-600">₹{bill.due}</span></p></div>
+
+            {/* FINANCIAL STATS */}
+            <div className="mt-8 grid grid-cols-2 gap-4 pt-6 border-t border-slate-50">
+                <div className="space-y-1">
+                    <p className="text-[9px] uppercase font-bold text-slate-300 tracking-wider">Land Area</p>
+                    <p className="text-sm font-bold text-slate-700">{bill.total_land_in_bigha} B / ₹{bill.amount}</p>
+                </div>
+                <div className="text-right space-y-1">
+                    <p className="text-[9px] uppercase font-bold text-slate-300 tracking-wider">Status</p>
+                    <div className="flex flex-col items-end">
+                        <span className={`text-sm font-black ${bill.due > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
+                            {bill.due > 0 ? `₹${bill.due} DUE` : 'CLEARED'}
+                        </span>
+                        <p className="text-[10px] text-emerald-500 font-bold">₹{bill.paid} Paid</p>
+                    </div>
+                </div>
             </div>
           </div>
         ))}
       </div>
 
+      {/* CREATE DIALOG */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="rounded-3xl p-8 max-w-lg">
-          <DialogHeader><DialogTitle className="text-2xl font-light text-[#051039]">Create Bill</DialogTitle></DialogHeader>
+        <DialogContent className="rounded-3xl p-8 max-w-lg border-none shadow-3xl">
+          <DialogHeader><DialogTitle className="text-3xl font-light text-[#051039]">Generate Bill</DialogTitle></DialogHeader>
           <form onSubmit={handleSubmit} className="space-y-4 mt-4">
             <Select onValueChange={(v) => setFormData({...formData, consumer_id: v})} required>
-                <SelectTrigger className="h-14 rounded-2xl bg-slate-50 border-none px-6"><SelectValue placeholder="Select Farmer" /></SelectTrigger>
-                <SelectContent className="rounded-xl border-none shadow-xl">{consumers.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}</SelectContent>
+                <SelectTrigger className="h-14 rounded-2xl bg-slate-50 border-none px-6"><SelectValue placeholder="Identify Farmer" /></SelectTrigger>
+                <SelectContent className="rounded-xl border-none shadow-2xl">{consumers.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}</SelectContent>
             </Select>
             <Select value={formData.category} onValueChange={(v) => setFormData({...formData, category: v})}>
                 <SelectTrigger className="h-14 rounded-2xl bg-slate-50 border-none px-6"><SelectValue /></SelectTrigger>
-                <SelectContent className="rounded-xl border-none shadow-xl">{TAX_CATEGORIES.map(cat => <SelectItem key={cat} value={cat}>{cat.toUpperCase()}</SelectItem>)}</SelectContent>
+                <SelectContent className="rounded-xl border-none shadow-2xl">{TAX_CATEGORIES.map(cat => <SelectItem key={cat} value={cat}>{cat.toUpperCase()}</SelectItem>)}</SelectContent>
             </Select>
-            <Input placeholder="Season (e.g. Boro 2026)" className="h-14 rounded-2xl bg-slate-50 border-none px-6" onChange={(e) => setFormData({...formData, billing_period: e.target.value})} required />
+            <Input placeholder="Season Name" className="h-14 rounded-2xl bg-slate-50 border-none px-6" onChange={(e) => setFormData({...formData, billing_period: e.target.value})} required />
             <div className="grid grid-cols-2 gap-4">
                 <Input type="number" step="0.01" className="h-14 rounded-2xl bg-slate-50 border-none px-6" placeholder="Bigha" onChange={(e) => setFormData({...formData, land_used_bigha: parseFloat(e.target.value) || 0})} />
                 <Input type="number" step="0.01" className="h-14 rounded-2xl bg-slate-50 border-none px-6" placeholder="Katha" onChange={(e) => setFormData({...formData, land_used_katha: parseFloat(e.target.value) || 0})} />
             </div>
-            <Button type="submit" className="w-full h-14 bg-[#051039] text-white rounded-2xl font-bold shadow-xl">Generate Bill</Button>
+            <Button type="submit" className="w-full h-14 bg-[#051039] text-white rounded-2xl font-bold shadow-xl hover:scale-[1.01] transition-all">Authorize & Create Bill</Button>
           </form>
         </DialogContent>
       </Dialog>
