@@ -19,28 +19,27 @@ const Farmers = () => {
   // --- DATA FETCHING & AGGREGATION ---
   const fetchData = useCallback(async () => {
     try {
-      // Fetch both Farmers and Bills to aggregate the data
       const [fRes, bRes] = await Promise.all([
         axios.get(`${API_URL}/api/consumers`, { withCredentials: true }),
         axios.get(`${API_URL}/api/bills`, { withCredentials: true })
       ]);
       
-      const fetchedFarmers = fRes.data.items || fRes.data;
-      const fetchedBills = bRes.data.items || bRes.data;
+      // BULLETPROOF ARRAY CHECK: Ensures we don't crash if the backend returns nothing
+      const fetchedFarmers = Array.isArray(fRes.data?.items) ? fRes.data.items : (Array.isArray(fRes.data) ? fRes.data : []);
+      const fetchedBills = Array.isArray(bRes.data?.items) ? bRes.data.items : (Array.isArray(bRes.data) ? bRes.data : []);
 
-      // Group bill data for each farmer
       const processedFarmers = fetchedFarmers.map(farmer => {
         const farmerId = String(farmer._id || farmer.id);
         const farmerBills = fetchedBills.filter(b => String(b.consumer_id) === farmerId);
 
-        // Aggregate financials and category-wise land
         const stats = farmerBills.reduce((acc, bill) => {
-          acc.amount += (bill.amount || 0);
-          acc.paid += (bill.paid || 0);
-          acc.due += (bill.due || 0);
+          // BULLETPROOF NUMBER CHECK: Forces data into numbers so React doesn't crash on strings
+          acc.amount += Number(bill.amount || 0);
+          acc.paid += Number(bill.paid || 0);
+          acc.due += Number(bill.due || 0);
           
-          const cat = (bill.category || 'Unknown').toUpperCase();
-          acc.landByCategory[cat] = (acc.landByCategory[cat] || 0) + (bill.total_land_in_bigha || 0);
+          const cat = String(bill.category || 'Unknown').toUpperCase();
+          acc.landByCategory[cat] = (acc.landByCategory[cat] || 0) + Number(bill.total_land_in_bigha || 0);
           
           return acc;
         }, { amount: 0, paid: 0, due: 0, landByCategory: {} });
@@ -51,6 +50,7 @@ const Farmers = () => {
       setFarmers(processedFarmers);
     } catch (error) { 
       toast.error('Failed to fetch farmer data'); 
+      console.error(error);
     } finally { 
       setLoading(false); 
     }
@@ -63,9 +63,9 @@ const Farmers = () => {
     const loadingToast = toast.loading(`Preparing notification for ${farmer.name}...`);
     try {
       const response = await axios.post(`${API_URL}/api/sms/send-bill`, {
-        consumer_id: farmer.id || farmer._id,
-        land_area: `${farmer.land_bigha} Bigha, ${farmer.land_katha} Katha`,
-        amount: farmer.due || 0, // Using the aggregated due amount
+        consumer_id: String(farmer.id || farmer._id),
+        land_area: `${farmer.land_bigha || 0} Bigha, ${farmer.land_katha || 0} Katha`,
+        amount: Number(farmer.due || 0),
         period: "Current Dues",
         category: "WATER TAX" 
       }, { withCredentials: true });
@@ -124,11 +124,11 @@ const Farmers = () => {
   const openEditDialog = (farmer) => {
     setEditingFarmer(farmer);
     setFormData({ 
-      name: farmer.name, 
-      phone: farmer.phone, 
-      address: farmer.address, 
-      land_bigha: farmer.land_bigha || 0, 
-      land_katha: farmer.land_katha || 0 
+      name: farmer.name || '', 
+      phone: farmer.phone || '', 
+      address: farmer.address || '', 
+      land_bigha: Number(farmer.land_bigha || 0), 
+      land_katha: Number(farmer.land_katha || 0) 
     });
     setDialogOpen(true);
   };
@@ -136,7 +136,13 @@ const Farmers = () => {
   const handleExport = (format) => {
     const headers = ['Name', 'Phone', 'Registered Bigha', 'Registered Katha', 'Total Billed', 'Paid', 'Due'];
     const rows = farmers.map(f => [
-      f.name, f.phone, f.land_bigha, f.land_katha, f.amount || 0, f.paid || 0, f.due || 0
+      f.name || 'Unknown', 
+      f.phone || 'N/A', 
+      f.land_bigha || 0, 
+      f.land_katha || 0, 
+      Number(f.amount || 0).toFixed(2), 
+      Number(f.paid || 0).toFixed(2), 
+      Number(f.due || 0).toFixed(2)
     ]);
     format === 'csv' 
       ? exportToCSV(rows, headers, `Farmers_${new Date().toLocaleDateString()}.csv`) 
@@ -197,8 +203,8 @@ const Farmers = () => {
             <div>
               <div className="flex justify-between items-start">
                 <div className="flex-1">
-                  <h3 className="text-xl font-bold text-slate-800 leading-tight truncate pr-2">{farmer.name}</h3>
-                  <p className="text-xs font-bold text-slate-400 mt-1 flex items-center gap-1"><Phone size={14} weight="fill"/> {farmer.phone}</p>
+                  <h3 className="text-xl font-bold text-slate-800 leading-tight truncate pr-2">{farmer.name || 'Unknown'}</h3>
+                  <p className="text-xs font-bold text-slate-400 mt-1 flex items-center gap-1"><Phone size={14} weight="fill"/> {farmer.phone || 'N/A'}</p>
                 </div>
                 <div className="flex gap-1">
                   <Button variant="ghost" size="sm" onClick={() => handleSendBillNotification(farmer, 'whatsapp')} title="WhatsApp" className="text-emerald-500 rounded-full h-8 w-8 p-0"><WhatsappLogo size={20} weight="fill"/></Button>
@@ -213,7 +219,7 @@ const Farmers = () => {
                 {farmer.landByCategory && Object.keys(farmer.landByCategory).length > 0 ? (
                   Object.entries(farmer.landByCategory).map(([cat, amount]) => (
                     <span key={cat} className="text-[10px] bg-slate-100 text-slate-600 px-2 py-1 rounded-md font-bold border border-slate-200">
-                      {cat.split(' ').slice(0, 2).join(' ')}: {amount.toFixed(2)}B
+                      {cat.split(' ').slice(0, 2).join(' ')}: {Number(amount).toFixed(2)}B
                     </span>
                   ))
                 ) : (
@@ -226,15 +232,15 @@ const Farmers = () => {
             <div className="mt-6 pt-4 border-t border-slate-100 grid grid-cols-3 gap-2">
               <div>
                 <p className="text-[10px] font-bold text-slate-400 uppercase">Total</p>
-                <p className="text-sm font-bold text-slate-700">₹{farmer.amount ? farmer.amount.toFixed(0) : 0}</p>
+                <p className="text-sm font-bold text-slate-700">₹{Number(farmer.amount || 0).toFixed(0)}</p>
               </div>
               <div>
                 <p className="text-[10px] font-bold text-slate-400 uppercase">Paid</p>
-                <p className="text-sm font-bold text-emerald-600">₹{farmer.paid ? farmer.paid.toFixed(0) : 0}</p>
+                <p className="text-sm font-bold text-emerald-600">₹{Number(farmer.paid || 0).toFixed(0)}</p>
               </div>
               <div className="text-right">
                 <p className="text-[10px] font-bold text-rose-400 uppercase">Due</p>
-                <p className="text-sm font-black text-rose-600">₹{farmer.due ? farmer.due.toFixed(0) : 0}</p>
+                <p className="text-sm font-black text-rose-600">₹{Number(farmer.due || 0).toFixed(0)}</p>
               </div>
             </div>
 
