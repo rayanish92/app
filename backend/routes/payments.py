@@ -1,155 +1,118 @@
-from fastapi import APIRouter, HTTPException, Request, Query
+from fastapi import APIRouter, HTTPException, Request
 from datetime import datetime, timezone
 from bson import ObjectId
-from models.schemas import PaymentCreate
+from bson.errors import InvalidId
+from pydantic import BaseModel
 from utils.auth import get_current_user
+import logging
 
-router = APIRouter(prefix='/payments', tags=['payments'])
+logger = logging.getLogger(__name__)
+router = APIRouter(prefix='/api/payments', tags=['payments'])
 
-def get_db(request: Request):
-    return request.app.state.db
+class PaymentCreate(BaseModel):
+    bill_id: str
+    amount: float
+    payment_method: str
+    category: str
+    notes: str = ""
+
+# --- BULLETPROOF ID FINDER ---
+def build_id_query(id_val):
+    try:
+        return {"_id": ObjectId(str(id_val))}
+    except InvalidId:
+        if str(id_val).isdigit():
+            return {"$or": [{"id": id_val}, {"id": str(id_val)}, {"id": int(id_val)}]}
+        return {"id": id_val}
+
+async def update_consumer_due(db, consumer_id):
+    try:
+        pipeline = [
+            {'$match': {'consumer_id': str(consumer_id)}},
+            {'$group': {'_id': None, 'total': {'$sum': '$due'}}}
+        ]
+        cursor = db.bills.aggregate(pipeline)
+        result = await cursor.to_list(length=1)
+        new_total_due = result[0]['total'] if result else 0.0
+        
+        await db.consumers.update_one(
+            build_id_query(consumer_id),
+            {'$set': {'total_due': round(new_total_due, 2)}}
+        )
+    except Exception as e:
+        logger.error(f"Failed to update consumer due: {str(e)}")
 
 @router.get('')
-async def get_payments(
-    request: Request,
-    skip: int = Query(0, ge=0),
-    limit: int = Query(50, ge=1, le=100),
-):
-    db = get_db(request)
+async def get_payments(request: Request):
+    db = request.app.state.db
     await get_current_user(request, db)
-
-    total = await db.payments.count_documents({})
-    payments = await db.payments.find({}, {'_id': 0}).skip(skip).limit(limit).to_list(limit)
-
-    return {
-        'items': payments,
-        'total': total,
-        'skip': skip,
-        'limit': limit,
-        'has_more': (skip + limit) < total
-    }
+    payments = await db.payments.find().sort('created_at', -1).to_list(1000)
+    for p in payments:
+        p['_id'] = str(p['_id'])
+        if 'id' not in p: p['id'] = p['_id']
+    return {'items': payments}
 
 @router.post('')
 async def create_payment(payment: PaymentCreate, request: Request):
-    db = get_db(request)
+    db = request.app.state.db
     await get_current_user(request, db)
 
-    bill = await db.bills.find_one({'id': payment.bill_id}, {'_id': 0})
+    # 1. FIND THE BILL SAFELY
+    bill = await db.bills.find_one(build_id_query(payment.bill_id))
     if not bill:
-        raise HTTPException(status_code=404, detail='Bill not found')
+        raise HTTPException(404, "Bill not found in database! Please refresh the page.")
 
-    if payment.amount > bill['due']:
-        raise HTTPException(status_code=400, detail='Payment amount exceeds due amount')
+    # 2. DO THE MATH
+    current_paid = float(bill.get('paid', 0.0))
+    total_amount = float(bill.get('amount', 0.0))
+    
+    new_paid = current_paid + payment.amount
+    new_due = total_amount - new_paid
 
-    payment_dict = {
-        'id': str(ObjectId()),
-        'bill_id': payment.bill_id,
-        'consumer_id': bill['consumer_id'],
-        'consumer_name': bill['consumer_name'],
-        'amount': payment.amount,
-        'payment_method': payment.payment_method,
-        'notes': payment.notes or '',
-        'created_at': datetime.now(timezone.utc).isoformat()
-    }
+    # Prevent negative dues if they overpay
+    if new_due < 0: new_due = 0.0
 
-    await db.payments.insert_one(payment_dict)
-
-    # Update bill
-    new_paid = bill['paid'] + payment.amount
-    new_due = bill['due'] - payment.amount
+    # 3. UPDATE THE BILL
     await db.bills.update_one(
-        {'id': payment.bill_id},
-        {'$set': {'paid': round(new_paid, 2), 'due': round(new_due, 2)}}
+        build_id_query(payment.bill_id),
+        {"$set": {"paid": round(new_paid, 2), "due": round(new_due, 2)}}
     )
 
-    # Update consumer total due
-    total_due = await db.bills.aggregate([
-        {'$match': {'consumer_id': bill['consumer_id']}},
-        {'$group': {'_id': None, 'total': {'$sum': '$due'}}}
-    ]).to_list(1)
-    new_total_due = total_due[0]['total'] if total_due else 0.0
-    await db.consumers.update_one(
-        {'id': bill['consumer_id']},
-        {'$set': {'total_due': round(new_total_due, 2)}}
-    )
+    # 4. SAVE THE PAYMENT RECORD
+    payment_doc = payment.model_dump()
+    payment_doc['consumer_id'] = bill.get('consumer_id')
+    payment_doc['consumer_name'] = bill.get('consumer_name', 'Unknown Farmer')
+    payment_doc['created_at'] = datetime.now(timezone.utc)
+    
+    result = await db.payments.insert_one(payment_doc)
 
-    payment_dict.pop('_id', None)
-    return payment_dict
+    # 5. UPDATE MASTER FARMER DEBT
+    if bill.get('consumer_id'):
+        await update_consumer_due(db, bill.get('consumer_id'))
 
-@router.put('/{payment_id}')
-async def update_payment(payment_id: str, payment: PaymentCreate, request: Request):
-    db = get_db(request)
-    await get_current_user(request, db)
-
-    old_payment = await db.payments.find_one({'id': payment_id}, {'_id': 0})
-    if not old_payment:
-        raise HTTPException(status_code=404, detail='Payment not found')
-
-    bill = await db.bills.find_one({'id': payment.bill_id}, {'_id': 0})
-    if not bill:
-        raise HTTPException(status_code=404, detail='Bill not found')
-
-    amount_diff = payment.amount - old_payment['amount']
-
-    if bill['due'] + old_payment['amount'] < payment.amount:
-        raise HTTPException(status_code=400, detail='Payment amount exceeds bill total')
-
-    await db.payments.update_one(
-        {'id': payment_id},
-        {'$set': {
-            'amount': payment.amount,
-            'payment_method': payment.payment_method,
-            'notes': payment.notes or ''
-        }}
-    )
-
-    new_paid = bill['paid'] + amount_diff
-    new_due = bill['due'] - amount_diff
-    await db.bills.update_one(
-        {'id': payment.bill_id},
-        {'$set': {'paid': round(new_paid, 2), 'due': round(new_due, 2)}}
-    )
-
-    total_due = await db.bills.aggregate([
-        {'$match': {'consumer_id': bill['consumer_id']}},
-        {'$group': {'_id': None, 'total': {'$sum': '$due'}}}
-    ]).to_list(1)
-    new_total_due = total_due[0]['total'] if total_due else 0.0
-    await db.consumers.update_one(
-        {'id': bill['consumer_id']},
-        {'$set': {'total_due': round(new_total_due, 2)}}
-    )
-
-    return {'message': 'Payment updated successfully'}
+    return {"id": str(result.inserted_id), "status": "success"}
 
 @router.delete('/{payment_id}')
 async def delete_payment(payment_id: str, request: Request):
-    db = get_db(request)
+    db = request.app.state.db
     await get_current_user(request, db)
 
-    payment = await db.payments.find_one({'id': payment_id}, {'_id': 0})
+    payment = await db.payments.find_one(build_id_query(payment_id))
     if not payment:
-        raise HTTPException(status_code=404, detail='Payment not found')
+        raise HTTPException(404, "Payment not found")
 
-    bill = await db.bills.find_one({'id': payment['bill_id']}, {'_id': 0})
+    # Reverse the math on the bill
+    bill = await db.bills.find_one(build_id_query(payment['bill_id']))
     if bill:
-        new_paid = bill['paid'] - payment['amount']
-        new_due = bill['due'] + payment['amount']
+        new_paid = float(bill.get('paid', 0)) - float(payment['amount'])
+        if new_paid < 0: new_paid = 0
+        new_due = float(bill.get('amount', 0)) - new_paid
         await db.bills.update_one(
-            {'id': payment['bill_id']},
-            {'$set': {'paid': round(new_paid, 2), 'due': round(new_due, 2)}}
+            build_id_query(payment['bill_id']),
+            {"$set": {"paid": round(new_paid, 2), "due": round(new_due, 2)}}
         )
+        if bill.get('consumer_id'):
+            await update_consumer_due(db, bill.get('consumer_id'))
 
-        total_due = await db.bills.aggregate([
-            {'$match': {'consumer_id': bill['consumer_id']}},
-            {'$group': {'_id': None, 'total': {'$sum': '$due'}}}
-        ]).to_list(1)
-        new_total_due = total_due[0]['total'] if total_due else 0.0
-        await db.consumers.update_one(
-            {'id': bill['consumer_id']},
-            {'$set': {'total_due': round(new_total_due, 2)}}
-        )
-
-    await db.payments.delete_one({'id': payment_id})
-
-    return {'message': 'Payment deleted successfully'}
+    await db.payments.delete_one(build_id_query(payment_id))
+    return {"status": "success"}
