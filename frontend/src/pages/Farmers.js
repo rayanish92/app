@@ -3,20 +3,41 @@ import axios from 'axios';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '../components/ui/dialog';
-import { Plus, Trash, Pencil, Phone, WhatsappLogo, ChatCircleDots, FileCsv, FilePdf } from '@phosphor-icons/react';
+// FIX: Reverted to DownloadSimple to ensure compatibility with your icon library
+import { Plus, Trash, Pencil, Phone, WhatsappLogo, ChatCircleDots, DownloadSimple } from '@phosphor-icons/react';
 import { toast } from 'sonner';
 import { exportToCSV, exportToPDF } from '../lib/exportUtils';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
 
-const Farmers = () => {
+// --- ERROR BOUNDARY SAFETY NET ---
+class ErrorBoundary extends React.Component {
+  constructor(props) { super(props); this.state = { hasError: false, error: null }; }
+  static getDerivedStateFromError(error) { return { hasError: true, error }; }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="p-10 m-10 max-w-3xl mx-auto bg-rose-50 border border-rose-200 rounded-[2rem] text-rose-900 shadow-xl">
+          <h1 className="text-2xl font-black mb-2">React Crash Detected 🚨</h1>
+          <p className="font-medium text-rose-700">The white screen was blocked. Please copy the error below and send it to me:</p>
+          <pre className="mt-4 p-6 bg-white rounded-xl overflow-auto text-xs font-mono text-slate-800 border border-rose-100">
+            {this.state.error?.toString()}
+          </pre>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+// --- MAIN CONTENT ---
+const FarmersContent = () => {
   const [farmers, setFarmers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingFarmer, setEditingFarmer] = useState(null);
   const [formData, setFormData] = useState({ name: '', phone: '', address: '', land_bigha: 0, land_katha: 0 });
 
-  // --- DATA FETCHING & AGGREGATION ---
   const fetchData = useCallback(async () => {
     try {
       const [fRes, bRes] = await Promise.all([
@@ -24,7 +45,6 @@ const Farmers = () => {
         axios.get(`${API_URL}/api/bills`, { withCredentials: true })
       ]);
       
-      // BULLETPROOF ARRAY CHECK: Ensures we don't crash if the backend returns nothing
       const fetchedFarmers = Array.isArray(fRes.data?.items) ? fRes.data.items : (Array.isArray(fRes.data) ? fRes.data : []);
       const fetchedBills = Array.isArray(bRes.data?.items) ? bRes.data.items : (Array.isArray(bRes.data) ? bRes.data : []);
 
@@ -33,7 +53,6 @@ const Farmers = () => {
         const farmerBills = fetchedBills.filter(b => String(b.consumer_id) === farmerId);
 
         const stats = farmerBills.reduce((acc, bill) => {
-          // BULLETPROOF NUMBER CHECK: Forces data into numbers so React doesn't crash on strings
           acc.amount += Number(bill.amount || 0);
           acc.paid += Number(bill.paid || 0);
           acc.due += Number(bill.due || 0);
@@ -50,7 +69,6 @@ const Farmers = () => {
       setFarmers(processedFarmers);
     } catch (error) { 
       toast.error('Failed to fetch farmer data'); 
-      console.error(error);
     } finally { 
       setLoading(false); 
     }
@@ -58,7 +76,6 @@ const Farmers = () => {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  // --- ACTIONS ---
   const handleSendBillNotification = async (farmer, type) => {
     const loadingToast = toast.loading(`Preparing notification for ${farmer.name}...`);
     try {
@@ -154,15 +171,15 @@ const Farmers = () => {
   return (
     <div className="space-y-6 p-4 max-w-7xl mx-auto">
       
-      {/* HEADER */}
       <div className="flex justify-between items-end border-b pb-4">
         <div>
           <h1 className="text-3xl font-light text-[#051039]">Farmers</h1>
           <p className="text-xs text-slate-400 font-bold uppercase tracking-widest">{farmers.length} registered</p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={() => handleExport('csv')}><FileCsv size={20} className="text-green-600"/></Button>
-          <Button variant="outline" size="sm" onClick={() => handleExport('pdf')}><FilePdf size={20} className="text-red-600"/></Button>
+          {/* FIX: Using DownloadSimple icon which is verified to work on your build */}
+          <Button variant="outline" size="sm" onClick={() => handleExport('csv')}><DownloadSimple size={20} className="text-green-600 mr-1"/> CSV</Button>
+          <Button variant="outline" size="sm" onClick={() => handleExport('pdf')}><DownloadSimple size={20} className="text-red-600 mr-1"/> PDF</Button>
           
           <Dialog open={dialogOpen} onOpenChange={(open) => { setDialogOpen(open); if(!open) resetForm(); }}>
             <DialogTrigger asChild>
@@ -194,12 +211,10 @@ const Farmers = () => {
         </div>
       </div>
 
-      {/* FARMER CARDS */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {farmers.map((farmer) => (
           <div key={farmer._id || farmer.id} className="bg-white border p-6 rounded-[2rem] shadow-sm hover:shadow-xl transition-all group relative overflow-hidden flex flex-col justify-between">
             
-            {/* Top Section */}
             <div>
               <div className="flex justify-between items-start">
                 <div className="flex-1">
@@ -214,7 +229,6 @@ const Farmers = () => {
                 </div>
               </div>
 
-              {/* Aggregated Category Land Tags */}
               <div className="mt-4 flex flex-wrap gap-2">
                 {farmer.landByCategory && Object.keys(farmer.landByCategory).length > 0 ? (
                   Object.entries(farmer.landByCategory).map(([cat, amount]) => (
@@ -228,7 +242,6 @@ const Farmers = () => {
               </div>
             </div>
 
-            {/* Bottom Financial Section */}
             <div className="mt-6 pt-4 border-t border-slate-100 grid grid-cols-3 gap-2">
               <div>
                 <p className="text-[10px] font-bold text-slate-400 uppercase">Total</p>
@@ -250,5 +263,12 @@ const Farmers = () => {
     </div>
   );
 };
+
+// Wraps the component with the safety net before exporting
+const Farmers = () => (
+  <ErrorBoundary>
+    <FarmersContent />
+  </ErrorBoundary>
+);
 
 export default Farmers;
