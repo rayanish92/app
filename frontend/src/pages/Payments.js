@@ -22,21 +22,19 @@ const Payments = () => {
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [editingPayment, setEditingPayment] = useState(null);
   const [formData, setFormData] = useState({
-    bill_id: '', amount: 0, payment_method: 'cash', category: TAX_CATEGORIES[0], notes: ''
+    bill_id: '', amount: '', payment_method: 'cash', category: TAX_CATEGORIES[0], notes: ''
   });
 
-  // --- DATA FETCHING ---
   const fetchData = useCallback(async () => {
     try {
-      // Fetch payments, ALL bills (to find consumer IDs for receipts), and consumers (for phone numbers)
       const [paymentsRes, billsRes, consumersRes] = await Promise.all([
         axios.get(`${API_URL}/api/payments`, { withCredentials: true }),
         axios.get(`${API_URL}/api/bills`, { withCredentials: true }),
         axios.get(`${API_URL}/api/consumers`, { withCredentials: true })
       ]);
-      setPayments(paymentsRes.data.items || paymentsRes.data);
-      setBills(billsRes.data.items || billsRes.data);
-      setConsumers(consumersRes.data.items || consumersRes.data);
+      setPayments(paymentsRes.data.items || paymentsRes.data || []);
+      setBills(billsRes.data.items || billsRes.data || []);
+      setConsumers(consumersRes.data.items || consumersRes.data || []);
     } catch (error) {
       toast.error('Failed to fetch data');
     } finally {
@@ -46,11 +44,14 @@ const Payments = () => {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  // --- ACTIONS ---
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (!formData.bill_id) return toast.error("Please select a bill.");
+    if (!formData.amount || formData.amount <= 0) return toast.error("Please enter a valid amount.");
+
     try {
-      await axios.post(`${API_URL}/api/payments`, formData, { withCredentials: true });
+      const payload = { ...formData, amount: Number(formData.amount) };
+      await axios.post(`${API_URL}/api/payments`, payload, { withCredentials: true });
       toast.success('Payment recorded');
       setDialogOpen(false);
       resetForm();
@@ -60,42 +61,26 @@ const Payments = () => {
     }
   };
 
-  const handleEdit = async (e) => {
-    e.preventDefault();
-    try {
-      const id = editingPayment._id || editingPayment.id;
-      await axios.put(`${API_URL}/api/payments/${id}`, formData, { withCredentials: true });
-      toast.success('Payment updated');
-      setEditDialogOpen(false);
-      setEditingPayment(null);
-      resetForm();
-      await fetchData();
-    } catch (error) {
-      toast.error(error.response?.data?.detail || 'Failed to update payment');
-    }
-  };
-
   const handleDelete = async (paymentId) => {
-    if (!window.confirm('Delete this payment record?')) return;
+    if (!window.confirm('Delete this payment record? This will add the due amount back to the farmer.')) return;
     try {
       await axios.delete(`${API_URL}/api/payments/${paymentId}`, { withCredentials: true });
-      toast.success('Payment deleted');
+      toast.success('Payment deleted successfully');
       await fetchData();
     } catch (error) {
       toast.error('Failed to delete payment');
     }
   };
 
-  // --- MESSAGING LOGIC ---
   const handleSendSMS = async (payment) => {
     try {
-      const bill = bills.find(b => (b._id || b.id) === payment.bill_id) || {};
+      const bill = bills.find(b => String(b._id || b.id) === String(payment.bill_id)) || {};
       const consumerId = String(payment.consumer_id || bill.consumer_id);
       
       const payload = {
         consumer_id: consumerId,
         land_area: "Payment Receipt",
-        amount: payment.amount,
+        amount: Number(payment.amount),
         period: new Date(payment.created_at).toLocaleDateString(),
         category: payment.category || "PAYMENT"
       };
@@ -108,52 +93,37 @@ const Payments = () => {
   };
 
   const sendWhatsApp = (payment) => {
-    const bill = bills.find(b => (b._id || b.id) === payment.bill_id) || {};
+    const bill = bills.find(b => String(b._id || b.id) === String(payment.bill_id)) || {};
     const consumerId = String(payment.consumer_id || bill.consumer_id);
     const consumer = consumers.find(c => String(c._id || c.id) === consumerId);
 
     if (!consumer?.phone) return toast.error("No phone number found for this farmer.");
     
-    // Bengali Payment Receipt Message
     const msg = `নমস্কার ${payment.consumer_name},\nবিভাগ: ${(payment.category || 'বিল').toUpperCase()}\nজমা পরিমাণ: ₹${payment.amount}\nধন্যবাদ।`;
     window.open(`https://wa.me/91${consumer.phone}?text=${encodeURIComponent(msg)}`, '_blank');
   };
 
-  // --- UTILS ---
-  const openEditDialog = (payment) => {
-    setEditingPayment(payment);
-    setFormData({
-      bill_id: payment.bill_id,
-      amount: payment.amount,
-      payment_method: payment.payment_method,
-      category: payment.category || TAX_CATEGORIES[0],
-      notes: payment.notes
-    });
-    setEditDialogOpen(true);
-  };
-
-  const resetForm = () => setFormData({ bill_id: '', amount: 0, payment_method: 'cash', category: TAX_CATEGORIES[0], notes: '' });
+  const resetForm = () => setFormData({ bill_id: '', amount: '', payment_method: 'cash', category: TAX_CATEGORIES[0], notes: '' });
 
   const handleExport = (format) => {
     if (payments.length === 0) return toast.error("No data to export");
     const headers = ['Farmer', 'Category', 'Amount', 'Method', 'Notes', 'Date'];
     const rows = payments.map(p => [
-      p.consumer_name, p.category?.toUpperCase() || '-', p.amount, p.payment_method, p.notes, new Date(p.created_at).toLocaleDateString()
+      p.consumer_name || 'Unknown', p.category?.toUpperCase() || '-', p.amount, p.payment_method, p.notes, new Date(p.created_at).toLocaleDateString()
     ]);
     format === 'csv' 
       ? exportToCSV(rows, headers, `Payments_${new Date().toLocaleDateString()}.csv`) 
       : exportToPDF(rows, headers, 'Payment Collection Report', `Payments_${new Date().toLocaleDateString()}.pdf`);
   };
 
-  const selectedBill = bills.find(b => (b._id || b.id) === formData.bill_id);
-  const unpaidBills = bills.filter(b => b.due > 0); // Only show bills with dues in the dropdown
+  // STRICT MATH FIX: Ensures React accurately finds bills that have dues > 0
+  const selectedBill = bills.find(b => String(b._id || b.id) === String(formData.bill_id));
+  const unpaidBills = bills.filter(b => Number(b.due) > 0);
 
   if (loading) return <div className="p-12 text-center text-[#051039] font-black animate-pulse">Syncing Payments...</div>;
 
   return (
     <div className="space-y-6 p-4 max-w-7xl mx-auto">
-      
-      {/* HEADER */}
       <div className="flex justify-between items-end border-b pb-4">
         <div>
           <h1 className="text-3xl font-light text-[#051039]">Payments</h1>
@@ -180,14 +150,18 @@ const Payments = () => {
                 <Select value={formData.bill_id} onValueChange={(v) => setFormData({ ...formData, bill_id: v })} required>
                   <SelectTrigger className="h-14 rounded-2xl bg-slate-50 border-none px-6 text-lg"><SelectValue placeholder="Select Pending Bill" /></SelectTrigger>
                   <SelectContent className="rounded-xl border-none shadow-2xl max-h-60">
-                    {unpaidBills.map((b) => (
-                      <SelectItem key={b._id || b.id} value={String(b._id || b.id)}>
-                        {b.consumer_name} - {b.category?.toUpperCase()} (Due: ₹{b.due.toFixed(0)})
-                      </SelectItem>
-                    ))}
+                    {unpaidBills.length === 0 ? (
+                       <SelectItem value="none" disabled>No pending bills found</SelectItem>
+                    ) : (
+                      unpaidBills.map((b) => (
+                        <SelectItem key={String(b._id || b.id)} value={String(b._id || b.id)}>
+                          {b.consumer_name || 'Unknown'} - {b.category?.toUpperCase() || 'TAX'} (Due: ₹{Number(b.due || 0).toFixed(0)})
+                        </SelectItem>
+                      ))
+                    )}
                   </SelectContent>
                 </Select>
-                {selectedBill && <p className="text-xs text-rose-500 font-bold ml-4">Current Due: ₹{selectedBill.due.toFixed(0)}</p>}
+                {selectedBill && <p className="text-xs text-rose-500 font-bold ml-4">Current Due: ₹{Number(selectedBill.due || 0).toFixed(0)}</p>}
 
                 <Select value={formData.category} onValueChange={(v) => setFormData({ ...formData, category: v })}>
                   <SelectTrigger className="h-14 rounded-2xl bg-slate-50 border-none px-6 text-lg"><SelectValue placeholder="Payment Category" /></SelectTrigger>
@@ -199,7 +173,7 @@ const Payments = () => {
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <Label className="text-[10px] font-bold text-slate-500 uppercase ml-2">Amount (₹)</Label>
-                    <Input type="number" step="0.01" value={formData.amount} onChange={(e) => setFormData({ ...formData, amount: parseFloat(e.target.value) || 0 })} required className="h-14 rounded-2xl bg-slate-50 border-none px-6 text-lg mt-1" />
+                    <Input type="number" step="0.01" value={formData.amount} onChange={(e) => setFormData({ ...formData, amount: e.target.value })} required className="h-14 rounded-2xl bg-slate-50 border-none px-6 text-lg mt-1" />
                   </div>
                   <div>
                     <Label className="text-[10px] font-bold text-slate-500 uppercase ml-2">Method</Label>
@@ -227,7 +201,6 @@ const Payments = () => {
         </div>
       </div>
 
-      {/* PAYMENT CARDS GRID */}
       {payments.length === 0 ? (
         <div className="text-center py-12 bg-white border border-slate-100 rounded-[2rem]">
           <p className="text-slate-400 font-bold uppercase tracking-widest text-sm">No payments recorded</p>
@@ -236,34 +209,28 @@ const Payments = () => {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {payments.map((payment) => (
             <div key={payment._id || payment.id} className="bg-white border p-6 rounded-[2rem] shadow-sm hover:shadow-xl transition-all group relative overflow-hidden">
-              
               <div className="flex justify-between items-start">
                 <div className="flex-1">
                   <span className="text-[10px] bg-blue-50 text-[#051039] px-3 py-1 rounded-full uppercase font-black border border-blue-100">
                     {payment.category || 'PAYMENT'}
                   </span>
                   <h3 className="text-xl font-bold text-slate-800 mt-3 leading-tight truncate pr-2">
-                    {payment.consumer_name}
+                    {payment.consumer_name || 'Unknown Farmer'}
                   </h3>
                   <p className="text-xs font-bold text-slate-400 mt-0.5 uppercase tracking-tighter flex items-center gap-1">
                     <Calendar size={14} weight="fill"/> {new Date(payment.created_at).toLocaleDateString()}
                   </p>
                 </div>
-                
-                {/* Hover Actions */}
                 <div className="flex flex-col gap-1 opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity bg-white pl-2">
                   <Button type="button" variant="ghost" size="sm" onClick={() => sendWhatsApp(payment)} title="WhatsApp Receipt" className="text-emerald-500 rounded-full h-8 w-8 p-0"><WhatsappLogo size={22} weight="fill"/></Button>
                   <Button type="button" variant="ghost" size="sm" onClick={() => handleSendSMS(payment)} title="SMS Receipt" className="text-blue-500 rounded-full h-8 w-8 p-0"><ChatCircleDots size={22} weight="fill"/></Button>
-                  <Button type="button" variant="ghost" size="sm" onClick={() => openEditDialog(payment)} title="Edit" className="text-slate-400 hover:text-[#051039] rounded-full h-8 w-8 p-0"><Pencil size={20}/></Button>
                   <Button type="button" variant="ghost" size="sm" onClick={() => handleDelete(payment._id || payment.id)} title="Delete" className="text-rose-400 hover:text-rose-600 rounded-full h-8 w-8 p-0"><Trash size={20}/></Button>
                 </div>
               </div>
-
-              {/* Bottom Info Grid */}
               <div className="mt-6 pt-4 border-t border-slate-50 grid grid-cols-3 gap-2">
                 <div>
                   <p className="text-[10px] font-bold text-slate-300 uppercase">Method</p>
-                  <p className="text-sm font-bold text-slate-700 capitalize">{payment.payment_method.replace('_', ' ')}</p>
+                  <p className="text-sm font-bold text-slate-700 capitalize">{payment.payment_method?.replace('_', ' ') || 'Cash'}</p>
                 </div>
                 <div>
                   <p className="text-[10px] font-bold text-slate-300 uppercase">Notes</p>
@@ -271,63 +238,13 @@ const Payments = () => {
                 </div>
                 <div className="text-right">
                   <p className="text-[10px] font-bold text-slate-300 uppercase">Amount Paid</p>
-                  <p className="text-sm font-black text-emerald-600">₹{payment.amount.toFixed(0)}</p>
+                  <p className="text-sm font-black text-emerald-600">₹{Number(payment.amount || 0).toFixed(0)}</p>
                 </div>
               </div>
-
             </div>
           ))}
         </div>
       )}
-
-      {/* EDIT PAYMENT DIALOG */}
-      <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
-        <DialogContent className="rounded-[2.5rem] p-8 md:p-10 max-w-lg border-none shadow-3xl">
-          <DialogHeader><DialogTitle className="text-2xl font-light text-[#051039]">Edit Payment</DialogTitle></DialogHeader>
-          <form onSubmit={handleEdit} className="space-y-4 pt-4">
-            
-            <div>
-              <Label className="text-[10px] font-bold text-slate-500 uppercase ml-2">Farmer</Label>
-              <div className="h-14 rounded-2xl bg-slate-50 border-none px-6 text-lg flex items-center font-bold text-slate-700 mt-1">
-                {editingPayment?.consumer_name}
-              </div>
-            </div>
-
-            <Select value={formData.category} onValueChange={(v) => setFormData({ ...formData, category: v })}>
-              <SelectTrigger className="h-14 rounded-2xl bg-slate-50 border-none px-6 text-lg mt-2"><SelectValue /></SelectTrigger>
-              <SelectContent className="rounded-xl border-none shadow-2xl">
-                {TAX_CATEGORIES.map((cat) => <SelectItem key={cat} value={cat}>{cat.toUpperCase()}</SelectItem>)}
-              </SelectContent>
-            </Select>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label className="text-[10px] font-bold text-slate-500 uppercase ml-2">Amount (₹)</Label>
-                <Input type="number" step="0.01" value={formData.amount} onChange={(e) => setFormData({ ...formData, amount: parseFloat(e.target.value) || 0 })} required className="h-14 rounded-2xl bg-slate-50 border-none px-6 text-lg mt-1" />
-              </div>
-              <div>
-                <Label className="text-[10px] font-bold text-slate-500 uppercase ml-2">Method</Label>
-                <Select value={formData.payment_method} onValueChange={(v) => setFormData({ ...formData, payment_method: v })}>
-                  <SelectTrigger className="h-14 rounded-2xl bg-slate-50 border-none px-6 text-lg mt-1"><SelectValue /></SelectTrigger>
-                  <SelectContent className="rounded-xl border-none shadow-2xl">
-                    <SelectItem value="cash">Cash</SelectItem>
-                    <SelectItem value="bank_transfer">Bank Transfer</SelectItem>
-                    <SelectItem value="upi">UPI</SelectItem>
-                    <SelectItem value="cheque">Cheque</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-
-            <div>
-              <Label className="text-[10px] font-bold text-slate-500 uppercase ml-2">Notes</Label>
-              <Input value={formData.notes} onChange={(e) => setFormData({ ...formData, notes: e.target.value })} className="h-14 rounded-2xl bg-slate-50 border-none px-6 text-lg mt-1" />
-            </div>
-
-            <Button type="submit" className="w-full h-16 bg-[#051039] text-white rounded-2xl font-bold shadow-xl text-lg mt-2">Update Payment</Button>
-          </form>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 };
