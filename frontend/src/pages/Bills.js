@@ -13,7 +13,6 @@ import { TAX_CATEGORIES } from '../lib/constants';
 const API_URL = process.env.REACT_APP_BACKEND_URL;
 
 const Bills = () => {
-  // --- STATE ---
   const [bills, setBills] = useState([]);
   const [consumers, setConsumers] = useState([]);
   const [rateConfig, setRateConfig] = useState({ 
@@ -21,18 +20,15 @@ const Bills = () => {
   });
   const [loading, setLoading] = useState(true);
   
-  // Dialog States
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [rateDialogOpen, setRateDialogOpen] = useState(false);
   
-  // Form States
   const [editingBill, setEditingBill] = useState(null);
   const [formData, setFormData] = useState({
     consumer_id: '', land_used_bigha: 0, land_used_katha: 0, billing_period: '', category: TAX_CATEGORIES[0]
   });
 
-  // --- DATA SYNC ---
   const fetchData = useCallback(async () => {
     try {
       const [bRes, cRes, cfgRes] = await Promise.all([
@@ -52,7 +48,6 @@ const Bills = () => {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  // --- RATE SETTINGS LOGIC ---
   const handleRateCategorySwitch = async (cat) => {
     try {
       const { data } = await axios.get(`${API_URL}/api/rate-config?category=${cat}`, { withCredentials: true });
@@ -80,11 +75,8 @@ const Bills = () => {
     }
   };
 
-  // --- BILL CREATION & EDITING LOGIC ---
   const handleSubmit = async (e) => {
     e.preventDefault();
-    
-    // SAFETY CHECKS (New Fixes)
     if (!formData.consumer_id) return toast.error("Please select a farmer.");
     if (rateConfig.katha_to_bigha_ratio === 0) return toast.error("Katha ratio in settings cannot be 0.");
 
@@ -95,10 +87,7 @@ const Bills = () => {
       setFormData({ consumer_id: '', land_used_bigha: 0, land_used_katha: 0, billing_period: '', category: TAX_CATEGORIES[0] });
       fetchData();
     } catch (e) { 
-      // SMARTER ERROR HANDLING (New Fixes)
-      console.error("Backend Error:", e.response?.data);
       const backendMessage = e.response?.data?.detail;
-      
       if (Array.isArray(backendMessage)) {
          toast.error(`Validation Error: ${backendMessage[0].loc[1]} is missing or invalid`);
       } else if (typeof backendMessage === 'string') {
@@ -112,7 +101,7 @@ const Bills = () => {
   const openEditDialog = (bill) => {
     setEditingBill(bill);
     setFormData({
-      consumer_id: bill.consumer_id, 
+      consumer_id: String(bill.consumer_id), 
       land_used_bigha: bill.land_used_bigha,
       land_used_katha: bill.land_used_katha, 
       billing_period: bill.billing_period,
@@ -147,11 +136,10 @@ const Bills = () => {
     }
   };
 
-  // --- COMMUNICATION & EXPORT LOGIC ---
   const handleSendSMS = async (bill) => {
     try {
       const payload = {
-        consumer_id: bill.consumer_id,
+        consumer_id: String(bill.consumer_id),
         land_area: `${bill.land_used_bigha} Bigha, ${bill.land_used_katha} Katha`,
         amount: bill.amount,
         period: bill.billing_period,
@@ -165,35 +153,23 @@ const Bills = () => {
   };
 
   const sendWhatsApp = (bill) => {
-    const consumer = consumers.find(c => (c._id || c.id) === bill.consumer_id);
-    if (!consumer?.phone) {
-      return toast.error("No phone number found for this farmer.");
-    }
+    const consumer = consumers.find(c => String(c._id || c.id) === String(bill.consumer_id));
+    if (!consumer?.phone) return toast.error("No phone number found for this farmer.");
+    
     const msg = `নমস্কার ${bill.consumer_name},\nবিভাগ: ${bill.category.toUpperCase()}\nপরিমাণ: ₹${bill.amount}\nধন্যবাদ।`;
     window.open(`https://wa.me/91${consumer.phone}?text=${encodeURIComponent(msg)}`, '_blank');
   };
 
   const handleExport = (format) => {
     if (bills.length === 0) return toast.error("No data to export");
-    
     const headers = ['Farmer', 'Category', 'Land (Bigha)', 'Total (₹)', 'Paid (₹)', 'Due (₹)'];
-    const rows = bills.map(b => [
-      b.consumer_name || 'Unknown', 
-      b.category ? b.category.toUpperCase() : 'N/A', 
-      b.total_land_in_bigha, 
-      b.amount, 
-      b.paid, 
-      b.due
-    ]);
-
-    if (format === 'csv') {
-      exportToCSV(rows, headers, `Water_Bills_${new Date().toLocaleDateString()}.csv`);
-    } else {
-      exportToPDF(rows, headers, 'Water Tax Collection Report', `Water_Bills_${new Date().toLocaleDateString()}.pdf`);
-    }
+    const rows = bills.map(b => [ b.consumer_name || 'Unknown', b.category ? b.category.toUpperCase() : 'N/A', b.total_land_in_bigha, b.amount, b.paid, b.due ]);
+    
+    format === 'csv' 
+        ? exportToCSV(rows, headers, `Water_Bills_${new Date().toLocaleDateString()}.csv`)
+        : exportToPDF(rows, headers, 'Water Tax Collection Report', `Water_Bills_${new Date().toLocaleDateString()}.pdf`);
   };
 
-  // --- RENDER ---
   if (loading) return <div className="p-12 text-center text-[#051039] font-black animate-pulse">Syncing Database...</div>;
 
   return (
@@ -208,17 +184,12 @@ const Bills = () => {
           <Button variant="outline" size="sm" onClick={() => handleExport('csv')}><FileCsv size={20} className="text-green-600"/></Button>
           <Button variant="outline" size="sm" onClick={() => handleExport('pdf')}><FilePdf size={20} className="text-red-600"/></Button>
           
-          {/* SETTINGS DIALOG */}
           <Dialog open={rateDialogOpen} onOpenChange={setRateDialogOpen}>
             <DialogTrigger asChild><Button variant="outline" size="icon" className="rounded-full"><Gear size={22}/></Button></DialogTrigger>
             <DialogContent className="rounded-2xl border-none shadow-2xl">
               <DialogHeader><DialogTitle className="text-2xl font-bold text-[#051039]">Category Rates</DialogTitle></DialogHeader>
               <form onSubmit={handleRateUpdate} className="space-y-4 pt-2">
-                <select 
-                  className="w-full h-11 border rounded-xl px-4 bg-slate-50 font-semibold" 
-                  value={rateConfig.category} 
-                  onChange={(e) => handleRateCategorySwitch(e.target.value)}
-                >
+                <select className="w-full h-11 border rounded-xl px-4 bg-slate-50 font-semibold" value={rateConfig.category} onChange={(e) => handleRateCategorySwitch(e.target.value)}>
                   {TAX_CATEGORIES.map(cat => <option key={cat} value={cat}>{cat.toUpperCase()}</option>)}
                 </select>
                 <div className="grid grid-cols-2 gap-3">
@@ -256,8 +227,6 @@ const Bills = () => {
                 <h3 className="text-xl font-bold text-slate-800 mt-3 leading-tight truncate pr-2">{bill.consumer_name || 'Unknown Farmer'}</h3>
                 <p className="text-xs font-bold text-slate-400 mt-0.5 uppercase tracking-tighter">Period: {bill.billing_period}</p>
               </div>
-              
-              {/* ACTION BUTTONS (Hover to reveal) */}
               <div className="flex flex-col gap-1 opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity bg-white pl-2">
                 <Button type="button" variant="ghost" size="sm" onClick={() => sendWhatsApp(bill)} title="WhatsApp" className="text-emerald-500 rounded-full h-8 w-8 p-0"><WhatsappLogo size={22} weight="fill"/></Button>
                 <Button type="button" variant="ghost" size="sm" onClick={() => handleSendSMS(bill)} title="SMS" className="text-blue-500 rounded-full h-8 w-8 p-0"><ChatCircleDots size={22} weight="fill"/></Button>
@@ -265,7 +234,6 @@ const Bills = () => {
                 <Button type="button" variant="ghost" size="sm" onClick={() => handleDelete(bill)} title="Delete" className="text-rose-400 hover:text-rose-600 rounded-full h-8 w-8 p-0"><Trash size={20}/></Button>
               </div>
             </div>
-            
             <div className="mt-8 pt-4 border-t border-slate-50 grid grid-cols-2 gap-2">
                 <div>
                   <p className="text-[10px] font-bold text-slate-300 uppercase">Land / Total</p>
@@ -280,7 +248,7 @@ const Bills = () => {
         ))}
       </div>
 
-      {/* ----------------- CREATE BILL DIALOG ----------------- */}
+      {/* CREATE BILL DIALOG */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="rounded-[2.5rem] p-8 md:p-10 max-w-lg border-none shadow-3xl">
           <DialogHeader><DialogTitle className="text-2xl font-light text-[#051039]">Create Invoice</DialogTitle></DialogHeader>
@@ -289,8 +257,12 @@ const Bills = () => {
             <Select onValueChange={(v) => setFormData({...formData, consumer_id: v})} required>
                 <SelectTrigger className="h-14 rounded-2xl bg-slate-50 border-none px-6 text-lg"><SelectValue placeholder="Identify Farmer" /></SelectTrigger>
                 <SelectContent className="rounded-xl border-none shadow-2xl max-h-60">
-                  {/* FIX: Properly reading the ID of the consumer here */}
-                  {consumers.map(c => <SelectItem key={c._id || c.id} value={c._id || c.id}>{c.name} ({c.phone})</SelectItem>)}
+                  {/* FIX: Force keys and values to Strings to prevent UI crash */}
+                  {consumers.map(c => (
+                    <SelectItem key={String(c._id || c.id)} value={String(c._id || c.id)}>
+                      {c.name || 'Unknown'} ({c.phone || 'No Phone'})
+                    </SelectItem>
+                  ))}
                 </SelectContent>
             </Select>
 
@@ -313,7 +285,7 @@ const Bills = () => {
         </DialogContent>
       </Dialog>
 
-      {/* ----------------- EDIT BILL DIALOG ----------------- */}
+      {/* EDIT BILL DIALOG */}
       <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
         <DialogContent className="rounded-[2.5rem] p-8 md:p-10 max-w-lg border-none shadow-3xl">
           <DialogHeader><DialogTitle className="text-2xl font-light text-[#051039]">Update Record</DialogTitle></DialogHeader>
@@ -343,7 +315,6 @@ const Bills = () => {
           </form>
         </DialogContent>
       </Dialog>
-
     </div>
   );
 };
