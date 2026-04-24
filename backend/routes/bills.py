@@ -10,7 +10,6 @@ import logging
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix='/api/bills', tags=['bills'])
 
-# THE FIX: We explicitly tell Python to accept the land fields here!
 class BillCreate(BaseModel):
     consumer_id: str
     category: str
@@ -80,12 +79,10 @@ async def create_bill(bill: BillCreate, request: Request):
         result = await db.bills.insert_one(bill_doc)
         await update_consumer_due(db, bill.consumer_id)
 
-        # Sync the land size back to the farmer profile
         await db.consumers.update_one(
             build_id_query(bill.consumer_id),
             {"$set": {"land_bigha": bill.land_bigha, "land_katha": bill.land_katha}}
         )
-
         return {"id": str(result.inserted_id), "status": "success"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Backend Crash: {str(e)}")
@@ -103,7 +100,7 @@ async def update_bill(bill_id: str, bill_update: BillCreate, request: Request):
 
         paid = float(existing_bill.get('paid', 0.0))
         new_due = float(bill_update.amount) - paid
-        if new_due < 0: new_due = 0.0
+        # FIX: Removed zero clamp so reducing a bill creates a negative (Advance) due
 
         update_data = bill_update.model_dump()
         update_data['due'] = round(new_due, 2)
@@ -112,12 +109,10 @@ async def update_bill(bill_id: str, bill_update: BillCreate, request: Request):
         await db.bills.update_one(build_id_query(bill_id), {"$set": update_data})
         await update_consumer_due(db, bill_update.consumer_id)
 
-        # Sync the land size back to the farmer profile
         await db.consumers.update_one(
             build_id_query(bill_update.consumer_id),
             {"$set": {"land_bigha": bill_update.land_bigha, "land_katha": bill_update.land_katha}}
         )
-
         return {"status": "success"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Backend Crash: {str(e)}")
