@@ -1,27 +1,25 @@
-from fastapi import APIRouter, HTTPException, Request, Query
+from fastapi import APIRouter, HTTPException, Request
 from datetime import datetime, timezone
 from bson import ObjectId
 from bson.errors import InvalidId
 from pydantic import BaseModel
+from typing import Optional
 from utils.auth import get_current_user
 import logging
 
 logger = logging.getLogger(__name__)
-
 router = APIRouter(prefix='/api/bills', tags=['bills'])
 
+# THE FIX: We explicitly tell Python to accept the land fields here!
 class BillCreate(BaseModel):
     consumer_id: str
     category: str
-    land_used_bigha: float
-    land_used_katha: float
-    billing_period: str
+    amount: float
+    notes: Optional[str] = ""
+    land_bigha: Optional[float] = 0.0
+    land_katha: Optional[float] = 0.0
+    total_land_in_bigha: Optional[float] = 0.0
 
-def get_db(request: Request):
-    return request.app.state.db
-
-# --- HELPER: BULLETPROOF ID LOOKUP ---
-# This ensures we find the farmer whether their ID is an ObjectId, a String, or an Integer.
 def build_id_query(id_val):
     try:
         return {"_id": ObjectId(str(id_val))}
@@ -45,135 +43,98 @@ async def update_consumer_due(db, consumer_id):
             {'$set': {'total_due': round(new_total_due, 2)}}
         )
     except Exception as e:
-        logger.error(f"Failed to update consumer due amount: {str(e)}")
+        logger.error(f"Failed to update consumer due: {str(e)}")
 
 @router.get('')
-async def get_bills(
-    request: Request,
-    skip: int = Query(0, ge=0),
-    limit: int = Query(50, ge=1, le=100),
-):
-    db = get_db(request)
-    await get_current_user(request, db)
-
-    total = await db.bills.count_documents({})
-    bills = await db.bills.find().sort('created_at', -1).skip(skip).limit(limit).to_list(limit)
-    
-    for bill in bills:
-        bill['_id'] = str(bill['_id'])
-        if 'id' not in bill: bill['id'] = bill['_id']
-
-    return {
-        'items': bills,
-        'total': total,
-        'has_more': (skip + limit) < total
-    }
-
-@router.post("")
-async def create_bill(bill_data: BillCreate, request: Request):
+@router.get('/')
+async def get_bills(request: Request):
     try:
-        db = get_db(request)
+        db = request.app.state.db
         await get_current_user(request, db)
-        
-        # 1. FETCH RATES
-        rate_config = await db.rate_config.find_one({"category": bill_data.category})
-        rate_per_bigha = float(rate_config.get('rate_per_bigha', 100.0)) if rate_config else 100.0
-        rate_per_katha = float(rate_config.get('rate_per_katha', 5.0)) if rate_config else 5.0
-        katha_ratio = float(rate_config.get('katha_to_bigha_ratio', 20.0)) if rate_config else 20.0
-            
-        if katha_ratio == 0: katha_ratio = 20.0 
-
-        # 2. FIXED MATH: Calculate Bigha and Katha separately using their specific rates
-        total_land = bill_data.land_used_bigha + (bill_data.land_used_katha / katha_ratio)
-        total_amount = round((bill_data.land_used_bigha * rate_per_bigha) + (bill_data.land_used_katha * rate_per_katha), 2)
-
-        # 3. GET CONSUMER NAME (Using bulletproof ID lookup)
-        consumer = await db.consumers.find_one(build_id_query(bill_data.consumer_id))
-        consumer_name = consumer.get('name', 'Unknown Farmer') if consumer else "Unknown Farmer"
-
-        new_bill = {
-            "consumer_id": str(bill_data.consumer_id),
-            "consumer_name": consumer_name,
-            "category": bill_data.category,
-            "amount": total_amount,
-            "paid": 0.0,
-            "due": total_amount,
-            "land_used_bigha": bill_data.land_used_bigha,
-            "land_used_katha": bill_data.land_used_katha,
-            "total_land_in_bigha": round(total_land, 2),
-            "billing_period": bill_data.billing_period,
-            "created_at": datetime.now(timezone.utc)
-        }
-        
-        result = await db.bills.insert_one(new_bill)
-        await update_consumer_due(db, bill_data.consumer_id)
-        
-        return {"id": str(result.inserted_id), "status": "success"}
-
+        bills = await db.bills.find().sort('created_at', -1).to_list(length=1000)
+        for b in bills:
+            b['_id'] = str(b['_id'])
+            if 'id' not in b: b['id'] = b['_id']
+        return {'items': bills}
     except Exception as e:
-        logger.error(f"CRITICAL ERROR creating bill: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Backend crash: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Backend Crash: {str(e)}")
+
+@router.post('')
+@router.post('/')
+async def create_bill(bill: BillCreate, request: Request):
+    try:
+        db = request.app.state.db
+        await get_current_user(request, db)
+
+        consumer = await db.consumers.find_one(build_id_query(bill.consumer_id))
+        if not consumer:
+            raise HTTPException(404, "Farmer not found")
+
+        bill_doc = bill.model_dump()
+        bill_doc['consumer_name'] = consumer.get('name', 'Unknown')
+        bill_doc['paid'] = 0.0
+        bill_doc['due'] = round(bill.amount, 2)
+        bill_doc['amount'] = round(bill.amount, 2)
+        bill_doc['created_at'] = datetime.now(timezone.utc)
+        
+        result = await db.bills.insert_one(bill_doc)
+        await update_consumer_due(db, bill.consumer_id)
+
+        # Sync the land size back to the farmer profile
+        await db.consumers.update_one(
+            build_id_query(bill.consumer_id),
+            {"$set": {"land_bigha": bill.land_bigha, "land_katha": bill.land_katha}}
+        )
+
+        return {"id": str(result.inserted_id), "status": "success"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Backend Crash: {str(e)}")
 
 @router.put('/{bill_id}')
-async def update_bill(bill_id: str, bill_data: BillCreate, request: Request):
+@router.put('/{bill_id}/')
+async def update_bill(bill_id: str, bill_update: BillCreate, request: Request):
     try:
-        db = get_db(request)
+        db = request.app.state.db
         await get_current_user(request, db)
 
-        # Fetch rates and separate the math just like the POST route
-        rate_config = await db.rate_config.find_one({"category": bill_data.category})
-        rate_per_bigha = float(rate_config.get('rate_per_bigha', 100.0)) if rate_config else 100.0
-        rate_per_katha = float(rate_config.get('rate_per_katha', 5.0)) if rate_config else 5.0
-        katha_ratio = float(rate_config.get('katha_to_bigha_ratio', 20.0)) if rate_config else 20.0
-        
-        if katha_ratio == 0: katha_ratio = 20.0
+        existing_bill = await db.bills.find_one(build_id_query(bill_id))
+        if not existing_bill:
+            raise HTTPException(404, "Bill not found")
 
-        total_land = bill_data.land_used_bigha + (bill_data.land_used_katha / katha_ratio)
-        total_amount = round((bill_data.land_used_bigha * rate_per_bigha) + (bill_data.land_used_katha * rate_per_katha), 2)
+        paid = float(existing_bill.get('paid', 0.0))
+        new_due = float(bill_update.amount) - paid
+        if new_due < 0: new_due = 0.0
 
-        existing = await db.bills.find_one(build_id_query(bill_id))
-        if not existing:
-            raise HTTPException(404, "Bill not found in database")
-        
-        paid_amount = existing.get('paid', 0.0)
-        new_due = round(total_amount - paid_amount, 2)
+        update_data = bill_update.model_dump()
+        update_data['due'] = round(new_due, 2)
+        update_data['amount'] = round(bill_update.amount, 2)
 
-        update_doc = {
-            "category": bill_data.category,
-            "land_used_bigha": bill_data.land_used_bigha,
-            "land_used_katha": bill_data.land_used_katha,
-            "total_land_in_bigha": round(total_land, 2),
-            "amount": total_amount,
-            "due": new_due,
-            "billing_period": bill_data.billing_period
-        }
+        await db.bills.update_one(build_id_query(bill_id), {"$set": update_data})
+        await update_consumer_due(db, bill_update.consumer_id)
 
-        await db.bills.update_one(build_id_query(bill_id), {"$set": update_doc})
-        await update_consumer_due(db, bill_data.consumer_id)
-        
-        return {"message": "Updated successfully"}
-        
+        # Sync the land size back to the farmer profile
+        await db.consumers.update_one(
+            build_id_query(bill_update.consumer_id),
+            {"$set": {"land_bigha": bill_update.land_bigha, "land_katha": bill_update.land_katha}}
+        )
+
+        return {"status": "success"}
     except Exception as e:
-        logger.error(f"CRITICAL ERROR updating bill: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Backend crash: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Backend Crash: {str(e)}")
 
 @router.delete('/{bill_id}')
+@router.delete('/{bill_id}/')
 async def delete_bill(bill_id: str, request: Request):
     try:
-        db = get_db(request)
+        db = request.app.state.db
         await get_current_user(request, db)
 
         bill = await db.bills.find_one(build_id_query(bill_id))
         if not bill:
-            raise HTTPException(status_code=404, detail='Bill not found')
+            raise HTTPException(404, "Bill not found")
 
-        consumer_id = bill.get('consumer_id')
         await db.bills.delete_one(build_id_query(bill_id))
-
-        if consumer_id:
-            await update_consumer_due(db, consumer_id)
-
-        return {'message': 'Bill deleted successfully'}
+        await update_consumer_due(db, bill['consumer_id'])
+        return {"status": "success"}
     except Exception as e:
-        logger.error(f"CRITICAL ERROR deleting bill: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Backend crash: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Backend Crash: {str(e)}")
