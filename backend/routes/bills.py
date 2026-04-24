@@ -20,15 +20,23 @@ class BillCreate(BaseModel):
     land_katha: Optional[float] = 0.0
     total_land_in_bigha: Optional[float] = 0.0
 
+# BULLETPROOF ID SEARCH: Will find the farmer no matter how MongoDB saved their ID
 def build_id_query(id_val):
+    queries = [
+        {"id": id_val}, 
+        {"id": str(id_val)}, 
+        {"_id": str(id_val)}
+    ]
     try:
-        return {"_id": ObjectId(str(id_val))}
+        queries.append({"_id": ObjectId(str(id_val))})
     except InvalidId:
-        if str(id_val).isdigit():
-            return {"$or": [{"id": id_val}, {"id": str(id_val)}, {"id": int(id_val)}]}
-        return {"id": id_val}
+        pass
+    
+    if str(id_val).isdigit():
+        queries.append({"id": int(id_val)})
+        
+    return {"$or": queries}
 
-# UNIVERSAL COMPATIBILITY FIX: Works on both Pydantic V1 and V2
 def get_model_dict(model):
     return model.model_dump() if hasattr(model, 'model_dump') else model.dict()
 
@@ -71,9 +79,10 @@ async def create_bill(bill: BillCreate, request: Request):
         db = request.app.state.db
         await get_current_user(request, db)
 
+        # Uses the new bulletproof search here
         consumer = await db.consumers.find_one(build_id_query(bill.consumer_id))
         if not consumer:
-            raise HTTPException(404, "Farmer not found")
+            raise HTTPException(404, "Farmer not found in the database")
 
         bill_doc = get_model_dict(bill)
         bill_doc['consumer_name'] = consumer.get('name', 'Unknown')
@@ -85,7 +94,6 @@ async def create_bill(bill: BillCreate, request: Request):
         result = await db.bills.insert_one(bill_doc)
         await update_consumer_due(db, bill.consumer_id)
 
-        # Sync the land size back to the farmer profile safely
         await db.consumers.update_one(
             build_id_query(bill.consumer_id),
             {"$set": {
@@ -95,6 +103,9 @@ async def create_bill(bill: BillCreate, request: Request):
         )
 
         return {"id": str(result.inserted_id), "status": "success"}
+    except HTTPException:
+        # Prevent proper 404/400 errors from turning into 500 server crashes
+        raise
     except Exception as e:
         error_details = traceback.format_exc()
         logger.error(f"CREATE BILL CRASH:\n{error_details}")
@@ -121,7 +132,6 @@ async def update_bill(bill_id: str, bill_update: BillCreate, request: Request):
         await db.bills.update_one(build_id_query(bill_id), {"$set": update_data})
         await update_consumer_due(db, bill_update.consumer_id)
 
-        # Sync the land size back to the farmer profile safely
         await db.consumers.update_one(
             build_id_query(bill_update.consumer_id),
             {"$set": {
@@ -131,6 +141,8 @@ async def update_bill(bill_id: str, bill_update: BillCreate, request: Request):
         )
 
         return {"status": "success"}
+    except HTTPException:
+        raise
     except Exception as e:
         error_details = traceback.format_exc()
         logger.error(f"UPDATE BILL CRASH:\n{error_details}")
@@ -150,6 +162,8 @@ async def delete_bill(bill_id: str, request: Request):
         await db.bills.delete_one(build_id_query(bill_id))
         await update_consumer_due(db, bill['consumer_id'])
         return {"status": "success"}
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(traceback.format_exc())
         raise HTTPException(status_code=500, detail=f"Backend Crash: {str(e)}")
