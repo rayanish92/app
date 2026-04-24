@@ -79,12 +79,14 @@ const FarmersContent = () => {
   const handleSendBillNotification = async (farmer, type) => {
     const loadingToast = toast.loading(`Preparing notification for ${farmer.name}...`);
     try {
+      const landText = `${farmer.land_bigha || 0} বিঘা, ${farmer.land_katha || 0} কাঠা`;
+      
       const response = await axios.post(`${API_URL}/api/sms/send-bill`, {
         consumer_id: String(farmer.id || farmer._id),
-        land_area: `${farmer.land_bigha || 0} Bigha, ${farmer.land_katha || 0} Katha`,
+        land_area: landText,
         amount: Number(farmer.due || 0),
         period: "Current Dues",
-        category: "WATER TAX" 
+        category: "WATER TAX" // You can set this to default to something else if needed
       }, { withCredentials: true });
 
       if (type === 'sms') {
@@ -94,7 +96,11 @@ const FarmersContent = () => {
           toast.error("SMS Failed", { id: loadingToast });
         }
       } else {
-        window.open(response.data.whatsapp_url, '_blank');
+        // Build direct WhatsApp fallback just in case backend link fails
+        const msg = `নমস্কার ${farmer.name},\nবিভাগ: জলের বিল\nজমি: ${landText}\nবাকি পরিমাণ: ₹${Number(farmer.due || 0).toFixed(0)}\nধন্যবাদ।`;
+        const waUrl = response.data.whatsapp_url || `https://wa.me/91${farmer.phone}?text=${encodeURIComponent(msg)}`;
+        
+        window.open(waUrl, '_blank');
         toast.dismiss(loadingToast);
       }
     } catch (error) { 
