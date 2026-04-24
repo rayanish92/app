@@ -3,12 +3,11 @@ export const TAX_CATEGORIES = [
   "boro seed water tax",
   "potato water tax",
   "mustard water tax",
-  "borsa chas water tax",         // <-- NEW
-  "borsa seed/bij water tax",     // <-- NEW
+  "borsa chas water tax",
+  "borsa seed/bij water tax",
   "others water tax"
 ];
 
-// This helper safely translates the categories for your WhatsApp frontend
 export const BENGALI_CAT_MAP = {
   "boro chas tax": "বোরো চাষ ট্যাক্স",
   "boro seed water tax": "বোরো বীজ জল ট্যাক্স",
@@ -22,6 +21,5 @@ export const BENGALI_CAT_MAP = {
 export const getBengaliCategory = (cat) => {
   if (!cat) return "জলের বিল";
   const lowerCat = cat.toLowerCase();
-  // If it's custom text, it returns the custom text. Otherwise, it translates it.
   return BENGALI_CAT_MAP[lowerCat] || cat; 
 };
