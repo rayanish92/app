@@ -34,11 +34,14 @@ const BillsContent = () => {
   const [isOthersCat, setIsOthersCat] = useState(false);
   const [customCatName, setCustomCatName] = useState('');
 
-  // Added land_bigha and land_katha to the form
   const [formData, setFormData] = useState({ 
     consumer_id: '', amount: '', category: TAX_CATEGORIES[0], notes: '', land_bigha: '', land_katha: '' 
   });
-  const [rateConfig, setRateConfig] = useState({ rate_per_bigha: 0, rate_per_katha: 0, katha_to_bigha_ratio: 20, category: TAX_CATEGORIES[0] });
+  
+  // RESTORED: Now includes katha_to_bigha_ratio
+  const [rateConfig, setRateConfig] = useState({ 
+    rate_per_bigha: 0, rate_per_katha: 0, katha_to_bigha_ratio: 20, category: TAX_CATEGORIES[0] 
+  });
 
   const fetchData = useCallback(async () => {
     try {
@@ -55,77 +58,87 @@ const BillsContent = () => {
     try {
       const targetCat = TAX_CATEGORIES.includes(categoryToFetch) ? categoryToFetch : TAX_CATEGORIES[0];
       const res = await axios.get(`${API_URL}/api/rate-config?category=${targetCat}`, { withCredentials: true });
-      if (res.data) setRateConfig(res.data);
+      if (res.data) setRateConfig({
+        ...res.data,
+        katha_to_bigha_ratio: res.data.katha_to_bigha_ratio || 20 // Fallback safety
+      });
       return res.data;
     } catch (e) { console.error("Failed to fetch rates"); return null; }
   };
 
   useEffect(() => { fetchData(); fetchRateConfig(TAX_CATEGORIES[0]); }, [fetchData]);
 
-  // --- SMART HELPERS ---
+  // --- STRICT MATH CALCULATOR ---
+  const calculateAmount = (bigha, katha, rates) => {
+    const b = parseFloat(bigha) || 0;
+    const k = parseFloat(katha) || 0;
+    const rB = parseFloat(rates?.rate_per_bigha) || 0;
+    const rK = parseFloat(rates?.rate_per_katha) || 0;
+    const total = (b * rB) + (k * rK);
+    return total > 0 ? total.toFixed(2) : '';
+  };
+
+  // --- EVENT-DRIVEN FORM HANDLERS ---
+  const handleFarmerSelect = (val) => {
+    const farmer = consumers.find(c => String(c._id || c.id) === String(val));
+    const b = farmer ? (farmer.land_bigha || 0) : '';
+    const k = farmer ? (farmer.land_katha || 0) : '';
+    
+    let newAmt = formData.amount;
+    if (!isOthersCat) newAmt = calculateAmount(b, k, rateConfig);
+    
+    setFormData({ ...formData, consumer_id: val, land_bigha: b, land_katha: k, amount: newAmt });
+  };
+
+  const handleLandChange = (field, value) => {
+    const newForm = { ...formData, [field]: value };
+    if (!isOthersCat) {
+      newForm.amount = calculateAmount(newForm.land_bigha, newForm.land_katha, rateConfig);
+    }
+    setFormData(newForm);
+  };
+
+  const handleCategorySelect = async (val) => {
+    setIsOthersCat(val === 'others water tax');
+    let newForm = { ...formData, category: val };
+    
+    if (val !== 'others water tax') {
+      const rates = await fetchRateConfig(val);
+      if (rates) newForm.amount = calculateAmount(newForm.land_bigha, newForm.land_katha, rates);
+    }
+    setFormData(newForm);
+  };
+
+  // --- HELPERS ---
   const getFarmerName = (consumerId, fallbackName) => {
     const farmer = consumers.find(c => String(c._id || c.id) === String(consumerId));
     if (farmer && farmer.name) return farmer.name;
     return fallbackName || 'Unknown Farmer';
   };
 
-  // Pulls the land text from the bill directly if it was saved, otherwise falls back to the farmer's profile
-  const getBillLandText = (bill, consumerId) => {
-    if (bill.land_bigha !== undefined && bill.land_katha !== undefined) {
-      return `${Number(bill.land_bigha)} বিঘা, ${Number(bill.land_katha)} কাঠা`;
-    }
+  const getLandText = (consumerId) => {
     const farmer = consumers.find(c => String(c._id || c.id) === String(consumerId)) || {};
     return `${Number(farmer.land_bigha || 0)} বিঘা, ${Number(farmer.land_katha || 0)} কাঠা`;
   };
 
-  // --- CALCULATION LOGIC ---
-  const handleFarmerSelect = (val) => {
-    const farmer = consumers.find(c => String(c._id || c.id) === String(val));
-    const bigha = farmer ? Number(farmer.land_bigha || 0) : 0;
-    const katha = farmer ? Number(farmer.land_katha || 0) : 0;
-    
-    let newAmount = formData.amount;
-    if (!isOthersCat) {
-       const calc = (bigha * Number(rateConfig.rate_per_bigha || 0)) + (katha * Number(rateConfig.rate_per_katha || 0));
-       if (calc > 0) newAmount = calc.toFixed(2);
+  const getBillLandText = (bill, consumerId) => {
+    if (bill.land_bigha !== undefined && bill.land_katha !== undefined) {
+      return `${Number(bill.land_bigha)} বিঘা, ${Number(bill.land_katha)} কাঠা`;
     }
-    setFormData(prev => ({ ...prev, consumer_id: val, land_bigha: bigha, land_katha: katha, amount: newAmount }));
-  };
-
-  const handleLandChange = (field, value) => {
-    const newFormData = { ...formData, [field]: value };
-    const numVal = parseFloat(value) || 0;
-    
-    if (!isOthersCat) {
-      const bigha = field === 'land_bigha' ? numVal : Number(formData.land_bigha || 0);
-      const katha = field === 'land_katha' ? numVal : Number(formData.land_katha || 0);
-      const calc = (bigha * Number(rateConfig.rate_per_bigha || 0)) + (katha * Number(rateConfig.rate_per_katha || 0));
-      if (calc > 0) newFormData.amount = calc.toFixed(2);
-    }
-    setFormData(newFormData);
-  };
-
-  const handleCategorySelect = async (val) => {
-    setIsOthersCat(val === 'others water tax');
-    let newFormData = { ...formData, category: val };
-    
-    if (val !== 'others water tax') {
-      const rates = await fetchRateConfig(val);
-      if (rates) {
-        const bigha = Number(formData.land_bigha || 0);
-        const katha = Number(formData.land_katha || 0);
-        const calc = (bigha * Number(rates.rate_per_bigha || 0)) + (katha * Number(rates.rate_per_katha || 0));
-        if (calc > 0) newFormData.amount = calc.toFixed(2);
-      }
-    }
-    setFormData(newFormData);
+    return getLandText(consumerId);
   };
 
   // --- ACTIONS ---
   const handleRateUpdate = async (e) => {
     e.preventDefault();
     try {
-      await axios.put(`${API_URL}/api/rate-config`, rateConfig, { withCredentials: true });
+      const payload = {
+        category: rateConfig.category,
+        rate_per_bigha: parseFloat(rateConfig.rate_per_bigha) || 0,
+        rate_per_katha: parseFloat(rateConfig.rate_per_katha) || 0,
+        katha_to_bigha_ratio: parseFloat(rateConfig.katha_to_bigha_ratio) || 20 // RESTORED
+      };
+      await axios.put(`${API_URL}/api/rate-config`, payload, { withCredentials: true });
       toast.success('Rates saved');
       setRateDialogOpen(false);
       fetchRateConfig(rateConfig.category); 
@@ -134,38 +147,66 @@ const BillsContent = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!formData.consumer_id || !formData.amount) return toast.error("Check farmer and amount.");
-    if (isOthersCat && !customCatName) return toast.error("Enter custom tax name.");
+    if (!formData.consumer_id) return toast.error("Please select a farmer.");
+    if (!formData.amount || Number(formData.amount) <= 0) return toast.error("Please enter a valid amount.");
+    if (isOthersCat && !customCatName) return toast.error("Please enter the custom tax name.");
 
     try {
-      const payload = { 
-        ...formData, 
+      // DYNAMIC MATH: Uses the live ratio instead of hardcoded 20
+      const currentRatio = parseFloat(rateConfig.katha_to_bigha_ratio) || 20;
+      
+      const billPayload = { 
+        consumer_id: String(formData.consumer_id),
         category: isOthersCat ? customCatName : formData.category, 
-        amount: Number(formData.amount),
-        land_bigha: Number(formData.land_bigha || 0),
-        land_katha: Number(formData.land_katha || 0),
-        total_land_in_bigha: Number(formData.land_bigha || 0) + (Number(formData.land_katha || 0) / 20)
+        amount: parseFloat(formData.amount) || 0,
+        land_bigha: parseFloat(formData.land_bigha) || 0,
+        land_katha: parseFloat(formData.land_katha) || 0,
+        total_land_in_bigha: (parseFloat(formData.land_bigha) || 0) + ((parseFloat(formData.land_katha) || 0) / currentRatio),
+        notes: formData.notes || ""
       };
-      await axios.post(`${API_URL}/api/bills`, payload, { withCredentials: true });
+      
+      await axios.post(`${API_URL}/api/bills`, billPayload, { withCredentials: true });
+
+      const farmer = consumers.find(c => String(c._id || c.id) === String(formData.consumer_id));
+      if (farmer && (Number(farmer.land_bigha) !== Number(formData.land_bigha) || Number(farmer.land_katha) !== Number(formData.land_katha))) {
+        await axios.put(`${API_URL}/api/consumers/${farmer._id || farmer.id}`, {
+          ...farmer,
+          land_bigha: parseFloat(formData.land_bigha) || 0,
+          land_katha: parseFloat(formData.land_katha) || 0
+        }, { withCredentials: true });
+      }
+
       toast.success('Bill generated');
-      setDialogOpen(false); resetForm(); await fetchData();
-    } catch (error) { toast.error('Failed to generate bill'); }
+      setDialogOpen(false); 
+      resetForm(); 
+      await fetchData();
+    } catch (error) { 
+      const errDetail = error.response?.data?.detail;
+      const msg = Array.isArray(errDetail) ? errDetail[0].msg : errDetail;
+      toast.error(`Failed: ${msg || 'Server Error'}`); 
+    }
   };
 
   const handleEdit = async (e) => {
     e.preventDefault();
+    if (isOthersCat && !customCatName) return toast.error("Please enter the custom tax name.");
     try {
+      const currentRatio = parseFloat(rateConfig.katha_to_bigha_ratio) || 20;
+
       const payload = { 
-        ...formData, 
+        consumer_id: String(formData.consumer_id),
         category: isOthersCat ? customCatName : formData.category, 
-        amount: Number(formData.amount),
-        land_bigha: Number(formData.land_bigha || 0),
-        land_katha: Number(formData.land_katha || 0),
-        total_land_in_bigha: Number(formData.land_bigha || 0) + (Number(formData.land_katha || 0) / 20)
+        amount: parseFloat(formData.amount) || 0,
+        land_bigha: parseFloat(formData.land_bigha) || 0,
+        land_katha: parseFloat(formData.land_katha) || 0,
+        total_land_in_bigha: (parseFloat(formData.land_bigha) || 0) + ((parseFloat(formData.land_katha) || 0) / currentRatio),
+        notes: formData.notes || ""
       };
       await axios.put(`${API_URL}/api/bills/${editingBill._id || editingBill.id}`, payload, { withCredentials: true });
       toast.success('Bill updated');
-      setEditDialogOpen(false); resetForm(); await fetchData();
+      setEditDialogOpen(false); 
+      resetForm(); 
+      await fetchData();
     } catch (error) { toast.error('Failed to update bill'); }
   };
 
@@ -177,6 +218,7 @@ const BillsContent = () => {
     } catch (error) { toast.error('Failed to delete'); }
   };
 
+  // --- MESSAGING ---
   const handleSendSMS = async (bill) => {
     try {
       const consumerId = String(bill.consumer_id);
@@ -217,14 +259,15 @@ const BillsContent = () => {
       amount: bill.amount || '', 
       category: isCustom ? 'others water tax' : (bill.category?.toLowerCase() || TAX_CATEGORIES[0]), 
       notes: bill.notes || '',
-      land_bigha: bill.land_bigha !== undefined ? bill.land_bigha : (farmer ? farmer.land_bigha : 0),
-      land_katha: bill.land_katha !== undefined ? bill.land_katha : (farmer ? farmer.land_katha : 0)
+      land_bigha: bill.land_bigha !== undefined ? bill.land_bigha : (farmer ? (farmer.land_bigha || 0) : 0),
+      land_katha: bill.land_katha !== undefined ? bill.land_katha : (farmer ? (farmer.land_katha || 0) : 0)
     });
     setEditDialogOpen(true);
   };
 
   const handleExport = (format) => {
-    const headers = ['Farmer', 'Category', 'Land', 'Total Amount', 'Paid', 'Due', 'Date', 'Notes'];
+    if (bills.length === 0) return toast.error("No data to export");
+    const headers = ['Farmer', 'Category', 'Land Size', 'Total Amount', 'Paid', 'Due', 'Date', 'Notes'];
     const rows = bills.map(b => [
       getFarmerName(b.consumer_id, b.consumer_name), 
       b.category ? String(b.category).toUpperCase() : '-', 
@@ -251,7 +294,7 @@ const BillsContent = () => {
 
           <Dialog open={rateDialogOpen} onOpenChange={(open) => { setRateDialogOpen(open); if(open) fetchRateConfig(rateConfig.category); }}>
             <DialogTrigger asChild><Button className="rounded-full h-12 w-12 bg-slate-100 hover:bg-slate-200 shadow-sm"><Gear size={24} weight="fill" /></Button></DialogTrigger>
-            <DialogContent className="rounded-[2.5rem] p-8 md:p-10 max-w-lg border-none shadow-3xl">
+            <DialogContent className="rounded-[2.5rem] p-8 md:p-10 max-w-2xl border-none shadow-3xl">
               <DialogHeader><DialogTitle className="text-2xl font-light">Configure Rates</DialogTitle></DialogHeader>
               <form onSubmit={handleRateUpdate} className="space-y-4 pt-4">
                 <Select value={rateConfig.category} onValueChange={(v) => { setRateConfig({...rateConfig, category: v}); fetchRateConfig(v); }}>
@@ -260,10 +303,23 @@ const BillsContent = () => {
                     {TAX_CATEGORIES.filter(c => c !== 'others water tax').map((cat) => <SelectItem key={cat} value={cat}>{cat.toUpperCase()}</SelectItem>)}
                   </SelectContent>
                 </Select>
-                <div className="grid grid-cols-2 gap-4">
-                  <div><Label className="text-[10px] font-bold text-slate-500 ml-2">Rate/Bigha (₹)</Label><Input type="number" step="0.01" value={rateConfig.rate_per_bigha} onChange={(e) => setRateConfig({...rateConfig, rate_per_bigha: parseFloat(e.target.value) || 0})} className="h-14 rounded-2xl bg-slate-50 border-none px-6 text-lg mt-1" /></div>
-                  <div><Label className="text-[10px] font-bold text-slate-500 ml-2">Rate/Katha (₹)</Label><Input type="number" step="0.01" value={rateConfig.rate_per_katha} onChange={(e) => setRateConfig({...rateConfig, rate_per_katha: parseFloat(e.target.value) || 0})} className="h-14 rounded-2xl bg-slate-50 border-none px-6 text-lg mt-1" /></div>
+                
+                {/* THE RESTORED KATHA-TO-BIGHA RATIO IN A 3-COLUMN GRID */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div>
+                    <Label className="text-[10px] font-bold text-slate-500 ml-2">Rate/Bigha (₹)</Label>
+                    <Input type="number" step="0.01" value={rateConfig.rate_per_bigha} onChange={(e) => setRateConfig({...rateConfig, rate_per_bigha: parseFloat(e.target.value) || 0})} className="h-14 rounded-2xl bg-slate-50 border-none px-6 text-lg mt-1" />
+                  </div>
+                  <div>
+                    <Label className="text-[10px] font-bold text-slate-500 ml-2">Rate/Katha (₹)</Label>
+                    <Input type="number" step="0.01" value={rateConfig.rate_per_katha} onChange={(e) => setRateConfig({...rateConfig, rate_per_katha: parseFloat(e.target.value) || 0})} className="h-14 rounded-2xl bg-slate-50 border-none px-6 text-lg mt-1" />
+                  </div>
+                  <div>
+                    <Label className="text-[10px] font-bold text-slate-500 ml-2">Katha per Bigha</Label>
+                    <Input type="number" step="0.01" value={rateConfig.katha_to_bigha_ratio} onChange={(e) => setRateConfig({...rateConfig, katha_to_bigha_ratio: parseFloat(e.target.value) || 20})} className="h-14 rounded-2xl bg-slate-50 border-none px-6 text-lg mt-1" />
+                  </div>
                 </div>
+                
                 <Button type="submit" className="w-full h-16 bg-[#051039] text-white rounded-2xl font-bold shadow-xl text-lg mt-2">Save Rates</Button>
               </form>
             </DialogContent>
@@ -274,6 +330,7 @@ const BillsContent = () => {
             <DialogContent className="rounded-[2.5rem] p-8 md:p-10 max-w-lg border-none shadow-3xl">
               <DialogHeader><DialogTitle className="text-2xl font-light text-[#051039]">Generate New Bill</DialogTitle></DialogHeader>
               <form onSubmit={handleSubmit} className="space-y-4 pt-4">
+                
                 <Select value={formData.consumer_id} onValueChange={handleFarmerSelect} required>
                   <SelectTrigger className="h-14 rounded-2xl bg-slate-50 border-none px-6 text-lg"><SelectValue placeholder="Select Farmer" /></SelectTrigger>
                   <SelectContent className="rounded-xl border-none shadow-2xl max-h-60">
@@ -295,7 +352,6 @@ const BillsContent = () => {
                   </div>
                 )}
 
-                {/* THE NEW BIGHA & KATHA INPUT FIELDS */}
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <Label className="text-[10px] font-bold text-slate-500 ml-2">Land (Bigha)</Label>
@@ -344,7 +400,6 @@ const BillsContent = () => {
                 </div>
               </div>
               
-              {/* LAND SIZE AND NOTES DISPLAYED ON CARD */}
               <div className="mt-4 grid grid-cols-2 gap-2 border-t border-slate-50 pt-4">
                 <div>
                   <p className="text-[10px] font-bold text-slate-400 uppercase">Land Size</p>
