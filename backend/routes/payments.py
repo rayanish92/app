@@ -72,7 +72,7 @@ async def create_payment(payment: PaymentCreate, request: Request):
         
         new_paid = current_paid + payment.amount
         new_due = total_amount - new_paid
-        if new_due < 0: new_due = 0.0
+        # FIX: Removed the zero clamp so it can go negative!
 
         await db.bills.update_one(
             build_id_query(payment.bill_id),
@@ -100,12 +100,30 @@ async def update_payment(payment_id: str, payment_update: PaymentCreate, request
         db = request.app.state.db
         await get_current_user(request, db)
         
-        payment = await db.payments.find_one(build_id_query(payment_id))
-        if not payment: raise HTTPException(404, "Payment not found")
+        old_payment = await db.payments.find_one(build_id_query(payment_id))
+        if not old_payment: raise HTTPException(404, "Payment not found")
 
-        # Complex logic to reverse old payment and apply new one omitted for brevity, 
-        # but updating the specific fields works safely:
+        # FIX: Calculate exact difference and apply it to the bill
+        old_amount = float(old_payment.get('amount', 0))
+        new_amount = float(payment_update.amount)
+        difference = new_amount - old_amount
+
+        # Update Payment Record
         await db.payments.update_one(build_id_query(payment_id), {"$set": payment_update.model_dump()})
+        
+        # Update Connected Bill
+        bill = await db.bills.find_one(build_id_query(payment_update.bill_id))
+        if bill:
+            new_paid = float(bill.get('paid', 0)) + difference
+            new_due = float(bill.get('amount', 0)) - new_paid
+            
+            await db.bills.update_one(
+                build_id_query(payment_update.bill_id),
+                {"$set": {"paid": round(new_paid, 2), "due": round(new_due, 2)}}
+            )
+            if bill.get('consumer_id'):
+                await update_consumer_due(db, bill.get('consumer_id'))
+
         return {"status": "success"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Backend Crash: {str(e)}")
@@ -124,8 +142,8 @@ async def delete_payment(payment_id: str, request: Request):
         bill = await db.bills.find_one(build_id_query(payment['bill_id']))
         if bill:
             new_paid = float(bill.get('paid', 0)) - float(payment['amount'])
-            if new_paid < 0: new_paid = 0
             new_due = float(bill.get('amount', 0)) - new_paid
+            # FIX: Removed zero clamp
             await db.bills.update_one(
                 build_id_query(payment['bill_id']),
                 {"$set": {"paid": round(new_paid, 2), "due": round(new_due, 2)}}
