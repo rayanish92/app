@@ -6,6 +6,7 @@ from pydantic import BaseModel
 from typing import Optional
 from utils.auth import get_current_user
 import logging
+import traceback
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix='/api/payments', tags=['payments'])
@@ -24,6 +25,10 @@ def build_id_query(id_val):
         if str(id_val).isdigit():
             return {"$or": [{"id": id_val}, {"id": str(id_val)}, {"id": int(id_val)}]}
         return {"id": id_val}
+
+# UNIVERSAL COMPATIBILITY FIX
+def get_model_dict(model):
+    return model.model_dump() if hasattr(model, 'model_dump') else model.dict()
 
 async def update_consumer_due(db, consumer_id):
     try:
@@ -54,6 +59,7 @@ async def get_payments(request: Request):
             if 'id' not in p: p['id'] = p['_id']
         return {'items': payments}
     except Exception as e:
+        logger.error(traceback.format_exc())
         raise HTTPException(status_code=500, detail=f"Backend Crash: {str(e)}")
 
 @router.post('')
@@ -72,14 +78,13 @@ async def create_payment(payment: PaymentCreate, request: Request):
         
         new_paid = current_paid + payment.amount
         new_due = total_amount - new_paid
-        # FIX: Removed the zero clamp so it can go negative!
 
         await db.bills.update_one(
             build_id_query(payment.bill_id),
             {"$set": {"paid": round(new_paid, 2), "due": round(new_due, 2)}}
         )
 
-        payment_doc = payment.model_dump()
+        payment_doc = get_model_dict(payment)
         payment_doc['consumer_id'] = bill.get('consumer_id')
         payment_doc['consumer_name'] = bill.get('consumer_name', 'Unknown Farmer')
         payment_doc['created_at'] = datetime.now(timezone.utc)
@@ -91,6 +96,8 @@ async def create_payment(payment: PaymentCreate, request: Request):
 
         return {"id": str(result.inserted_id), "status": "success"}
     except Exception as e:
+        error_details = traceback.format_exc()
+        logger.error(f"CREATE PAYMENT CRASH:\n{error_details}")
         raise HTTPException(status_code=500, detail=f"Backend Crash: {str(e)}")
 
 @router.put('/{payment_id}')
@@ -103,15 +110,12 @@ async def update_payment(payment_id: str, payment_update: PaymentCreate, request
         old_payment = await db.payments.find_one(build_id_query(payment_id))
         if not old_payment: raise HTTPException(404, "Payment not found")
 
-        # FIX: Calculate exact difference and apply it to the bill
         old_amount = float(old_payment.get('amount', 0))
         new_amount = float(payment_update.amount)
         difference = new_amount - old_amount
 
-        # Update Payment Record
-        await db.payments.update_one(build_id_query(payment_id), {"$set": payment_update.model_dump()})
+        await db.payments.update_one(build_id_query(payment_id), {"$set": get_model_dict(payment_update)})
         
-        # Update Connected Bill
         bill = await db.bills.find_one(build_id_query(payment_update.bill_id))
         if bill:
             new_paid = float(bill.get('paid', 0)) + difference
@@ -126,6 +130,8 @@ async def update_payment(payment_id: str, payment_update: PaymentCreate, request
 
         return {"status": "success"}
     except Exception as e:
+        error_details = traceback.format_exc()
+        logger.error(f"UPDATE PAYMENT CRASH:\n{error_details}")
         raise HTTPException(status_code=500, detail=f"Backend Crash: {str(e)}")
 
 @router.delete('/{payment_id}')
@@ -143,7 +149,6 @@ async def delete_payment(payment_id: str, request: Request):
         if bill:
             new_paid = float(bill.get('paid', 0)) - float(payment['amount'])
             new_due = float(bill.get('amount', 0)) - new_paid
-            # FIX: Removed zero clamp
             await db.bills.update_one(
                 build_id_query(payment['bill_id']),
                 {"$set": {"paid": round(new_paid, 2), "due": round(new_due, 2)}}
@@ -154,4 +159,5 @@ async def delete_payment(payment_id: str, request: Request):
         await db.payments.delete_one(build_id_query(payment_id))
         return {"status": "success"}
     except Exception as e:
+        logger.error(traceback.format_exc())
         raise HTTPException(status_code=500, detail=f"Backend Crash: {str(e)}")
