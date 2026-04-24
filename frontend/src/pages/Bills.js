@@ -38,7 +38,6 @@ const BillsContent = () => {
     consumer_id: '', amount: '', category: TAX_CATEGORIES[0], notes: '', land_bigha: '', land_katha: '' 
   });
   
-  // RESTORED: Now includes katha_to_bigha_ratio
   const [rateConfig, setRateConfig] = useState({ 
     rate_per_bigha: 0, rate_per_katha: 0, katha_to_bigha_ratio: 20, category: TAX_CATEGORIES[0] 
   });
@@ -60,7 +59,7 @@ const BillsContent = () => {
       const res = await axios.get(`${API_URL}/api/rate-config?category=${targetCat}`, { withCredentials: true });
       if (res.data) setRateConfig({
         ...res.data,
-        katha_to_bigha_ratio: res.data.katha_to_bigha_ratio || 20 // Fallback safety
+        katha_to_bigha_ratio: res.data.katha_to_bigha_ratio || 20
       });
       return res.data;
     } catch (e) { console.error("Failed to fetch rates"); return null; }
@@ -136,13 +135,27 @@ const BillsContent = () => {
         category: rateConfig.category,
         rate_per_bigha: parseFloat(rateConfig.rate_per_bigha) || 0,
         rate_per_katha: parseFloat(rateConfig.rate_per_katha) || 0,
-        katha_to_bigha_ratio: parseFloat(rateConfig.katha_to_bigha_ratio) || 20 // RESTORED
+        katha_to_bigha_ratio: parseFloat(rateConfig.katha_to_bigha_ratio) || 20
       };
       await axios.put(`${API_URL}/api/rate-config`, payload, { withCredentials: true });
       toast.success('Rates saved');
       setRateDialogOpen(false);
       fetchRateConfig(rateConfig.category); 
     } catch (error) { toast.error('Failed to save rates'); }
+  };
+
+  // UPDATE FARMER ACREAGE IN BACKGROUND
+  const syncFarmerLandSize = async () => {
+    const farmer = consumers.find(c => String(c._id || c.id) === String(formData.consumer_id));
+    if (farmer && (Number(farmer.land_bigha) !== Number(formData.land_bigha) || Number(farmer.land_katha) !== Number(formData.land_katha))) {
+      try {
+        await axios.put(`${API_URL}/api/consumers/${farmer._id || farmer.id}`, {
+          ...farmer,
+          land_bigha: parseFloat(formData.land_bigha) || 0,
+          land_katha: parseFloat(formData.land_katha) || 0
+        }, { withCredentials: true });
+      } catch (err) { console.error("Failed to sync land size", err); }
+    }
   };
 
   const handleSubmit = async (e) => {
@@ -152,29 +165,16 @@ const BillsContent = () => {
     if (isOthersCat && !customCatName) return toast.error("Please enter the custom tax name.");
 
     try {
-      // DYNAMIC MATH: Uses the live ratio instead of hardcoded 20
-      const currentRatio = parseFloat(rateConfig.katha_to_bigha_ratio) || 20;
-      
-      const billPayload = { 
+      // STRICT PAYLOAD: Only sends exactly what the backend expects to prevent 422 crash
+      const strictBillPayload = { 
         consumer_id: String(formData.consumer_id),
         category: isOthersCat ? customCatName : formData.category, 
         amount: parseFloat(formData.amount) || 0,
-        land_bigha: parseFloat(formData.land_bigha) || 0,
-        land_katha: parseFloat(formData.land_katha) || 0,
-        total_land_in_bigha: (parseFloat(formData.land_bigha) || 0) + ((parseFloat(formData.land_katha) || 0) / currentRatio),
         notes: formData.notes || ""
       };
       
-      await axios.post(`${API_URL}/api/bills`, billPayload, { withCredentials: true });
-
-      const farmer = consumers.find(c => String(c._id || c.id) === String(formData.consumer_id));
-      if (farmer && (Number(farmer.land_bigha) !== Number(formData.land_bigha) || Number(farmer.land_katha) !== Number(formData.land_katha))) {
-        await axios.put(`${API_URL}/api/consumers/${farmer._id || farmer.id}`, {
-          ...farmer,
-          land_bigha: parseFloat(formData.land_bigha) || 0,
-          land_katha: parseFloat(formData.land_katha) || 0
-        }, { withCredentials: true });
-      }
+      await axios.post(`${API_URL}/api/bills`, strictBillPayload, { withCredentials: true });
+      await syncFarmerLandSize(); // Saves land sizes to the Farmers DB instead!
 
       toast.success('Bill generated');
       setDialogOpen(false); 
@@ -191,23 +191,26 @@ const BillsContent = () => {
     e.preventDefault();
     if (isOthersCat && !customCatName) return toast.error("Please enter the custom tax name.");
     try {
-      const currentRatio = parseFloat(rateConfig.katha_to_bigha_ratio) || 20;
-
-      const payload = { 
+      // STRICT PAYLOAD
+      const strictBillPayload = { 
         consumer_id: String(formData.consumer_id),
         category: isOthersCat ? customCatName : formData.category, 
         amount: parseFloat(formData.amount) || 0,
-        land_bigha: parseFloat(formData.land_bigha) || 0,
-        land_katha: parseFloat(formData.land_katha) || 0,
-        total_land_in_bigha: (parseFloat(formData.land_bigha) || 0) + ((parseFloat(formData.land_katha) || 0) / currentRatio),
         notes: formData.notes || ""
       };
-      await axios.put(`${API_URL}/api/bills/${editingBill._id || editingBill.id}`, payload, { withCredentials: true });
+      
+      await axios.put(`${API_URL}/api/bills/${editingBill._id || editingBill.id}`, strictBillPayload, { withCredentials: true });
+      await syncFarmerLandSize();
+
       toast.success('Bill updated');
       setEditDialogOpen(false); 
       resetForm(); 
       await fetchData();
-    } catch (error) { toast.error('Failed to update bill'); }
+    } catch (error) { 
+      const errDetail = error.response?.data?.detail;
+      const msg = Array.isArray(errDetail) ? errDetail[0].msg : errDetail;
+      toast.error(`Failed: ${msg || 'Server Error'}`); 
+    }
   };
 
   const handleDelete = async (billId) => {
@@ -259,8 +262,8 @@ const BillsContent = () => {
       amount: bill.amount || '', 
       category: isCustom ? 'others water tax' : (bill.category?.toLowerCase() || TAX_CATEGORIES[0]), 
       notes: bill.notes || '',
-      land_bigha: bill.land_bigha !== undefined ? bill.land_bigha : (farmer ? (farmer.land_bigha || 0) : 0),
-      land_katha: bill.land_katha !== undefined ? bill.land_katha : (farmer ? (farmer.land_katha || 0) : 0)
+      land_bigha: farmer ? (farmer.land_bigha || 0) : 0,
+      land_katha: farmer ? (farmer.land_katha || 0) : 0
     });
     setEditDialogOpen(true);
   };
@@ -304,7 +307,6 @@ const BillsContent = () => {
                   </SelectContent>
                 </Select>
                 
-                {/* THE RESTORED KATHA-TO-BIGHA RATIO IN A 3-COLUMN GRID */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div>
                     <Label className="text-[10px] font-bold text-slate-500 ml-2">Rate/Bigha (₹)</Label>
