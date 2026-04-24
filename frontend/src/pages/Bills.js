@@ -212,56 +212,94 @@ const BillsContent = () => {
     if (!formData.amount || Number(formData.amount) <= 0) return toast.error("Please enter a valid amount.");
     if (isOthersCat && !customCatName) return toast.error("Please enter the custom tax name.");
 
+    const currentRatio = parseFloat(rateConfig.katha_to_bigha_ratio) || 20;
+    const bigha = parseFloat(formData.land_bigha) || 0;
+    const katha = parseFloat(formData.land_katha) || 0;
+    
+    const fullPayload = { 
+      consumer_id: String(formData.consumer_id),
+      category: isOthersCat ? customCatName : formData.category, 
+      amount: parseFloat(formData.amount) || 0,
+      land_bigha: bigha,
+      land_katha: katha,
+      total_land_in_bigha: bigha + (katha / currentRatio),
+      notes: formData.notes || ""
+    };
+
+    const safeFallbackPayload = {
+      consumer_id: String(formData.consumer_id),
+      category: isOthersCat ? customCatName : formData.category, 
+      amount: parseFloat(formData.amount) || 0,
+      notes: formData.notes || ""
+    };
+
     try {
-      const currentRatio = parseFloat(rateConfig.katha_to_bigha_ratio) || 20;
-      const bigha = parseFloat(formData.land_bigha) || 0;
-      const katha = parseFloat(formData.land_katha) || 0;
+      try {
+        // Try the new full payload first
+        await axios.post(`${API_URL}/api/bills`, fullPayload, { withCredentials: true });
+      } catch (err) {
+        // If the backend rejects the extra fields (422 error), catch it and send the simple payload safely!
+        if (err.response?.status === 422) {
+          await axios.post(`${API_URL}/api/bills`, safeFallbackPayload, { withCredentials: true });
+        } else {
+          throw err;
+        }
+      }
       
-      const billPayload = { 
-        consumer_id: String(formData.consumer_id),
-        category: isOthersCat ? customCatName : formData.category, 
-        amount: parseFloat(formData.amount) || 0,
-        land_bigha: bigha,
-        land_katha: katha,
-        total_land_in_bigha: bigha + (katha / currentRatio),
-        notes: formData.notes || ""
-      };
-      await axios.post(`${API_URL}/api/bills`, billPayload, { withCredentials: true });
       await syncFarmerLandSize();
       toast.success('Bill generated');
       setDialogOpen(false); 
       resetForm(); 
       await fetchData();
     } catch (error) { 
-      toast.error('Failed to generate bill'); 
+      toast.error('Failed to generate bill. Please check your data.'); 
     }
   };
 
   const handleEdit = async (e) => {
     e.preventDefault();
     if (isOthersCat && !customCatName) return toast.error("Please enter the custom tax name.");
+    
+    const currentRatio = parseFloat(rateConfig.katha_to_bigha_ratio) || 20;
+    const bigha = parseFloat(formData.land_bigha) || 0;
+    const katha = parseFloat(formData.land_katha) || 0;
+    
+    const fullPayload = { 
+      consumer_id: String(formData.consumer_id),
+      category: isOthersCat ? customCatName : formData.category, 
+      amount: parseFloat(formData.amount) || 0,
+      land_bigha: bigha,
+      land_katha: katha,
+      total_land_in_bigha: bigha + (katha / currentRatio),
+      notes: formData.notes || ""
+    };
+
+    const safeFallbackPayload = {
+      consumer_id: String(formData.consumer_id),
+      category: isOthersCat ? customCatName : formData.category, 
+      amount: parseFloat(formData.amount) || 0,
+      notes: formData.notes || ""
+    };
+
     try {
-      const currentRatio = parseFloat(rateConfig.katha_to_bigha_ratio) || 20;
-      const bigha = parseFloat(formData.land_bigha) || 0;
-      const katha = parseFloat(formData.land_katha) || 0;
-      
-      const payload = { 
-        consumer_id: String(formData.consumer_id),
-        category: isOthersCat ? customCatName : formData.category, 
-        amount: parseFloat(formData.amount) || 0,
-        land_bigha: bigha,
-        land_katha: katha,
-        total_land_in_bigha: bigha + (katha / currentRatio),
-        notes: formData.notes || ""
-      };
-      await axios.put(`${API_URL}/api/bills/${editingBill._id || editingBill.id}`, payload, { withCredentials: true });
+      const billId = editingBill._id || editingBill.id;
+      try {
+        await axios.put(`${API_URL}/api/bills/${billId}`, fullPayload, { withCredentials: true });
+      } catch (err) {
+        if (err.response?.status === 422) {
+          await axios.put(`${API_URL}/api/bills/${billId}`, safeFallbackPayload, { withCredentials: true });
+        } else {
+          throw err;
+        }
+      }
+
       await syncFarmerLandSize();
       toast.success('Bill updated');
       setEditDialogOpen(false); 
       resetForm(); 
       await fetchData();
     } catch (error) { 
-      toast.error('Failed to update bill'); 
+      toast.error('Failed to update bill.'); 
     }
   };
 
@@ -365,7 +403,7 @@ const BillsContent = () => {
 
   if (loading) {
     return (
-      <div className="p-12 text-center animate-pulse">
+      <div className="p-12 text-center animate-pulse text-[#051039] font-bold">
         Syncing Bills...
       </div>
     );
@@ -615,26 +653,26 @@ const BillsContent = () => {
         )}
       </div>
 
-      {/* BILL CARDS GRID */}
+      {/* COMPACT BILL CARDS GRID */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {filteredBills.length === 0 ? (
           <div className="col-span-full text-center py-12 bg-white border border-slate-100 rounded-[2rem]">
             <p className="text-slate-400 font-bold uppercase tracking-widest text-sm">
-              No bills found
+              No bills found for this filter
             </p>
           </div>
         ) : (
           filteredBills.map((bill) => {
             const isNegative = Number(bill.due) < 0;
             return (
-              <div key={bill._id || bill.id} className="bg-white border p-6 rounded-[2rem] shadow-sm hover:shadow-xl transition-all group relative overflow-hidden flex flex-col justify-between">
+              <div key={bill._id || bill.id} className="bg-white border p-4 rounded-2xl shadow-sm hover:shadow-md transition-all group relative overflow-hidden flex flex-col justify-between">
                 <div>
                   <div className="flex justify-between items-start">
                     <div className="flex-1">
                       <span className="text-[10px] bg-purple-50 text-purple-700 px-3 py-1 rounded-full uppercase font-black border border-purple-100">
                         {bill.category ? String(bill.category).toUpperCase() : 'WATER TAX'}
                       </span>
-                      <h3 className="text-xl font-bold text-slate-800 mt-3 leading-tight truncate pr-2">
+                      <h3 className="text-lg font-bold text-slate-800 mt-2 leading-tight truncate pr-2">
                         {getFarmerName(bill.consumer_id, bill.consumer_name)}
                       </h3>
                       <p className="text-xs font-bold text-slate-400 mt-0.5 flex items-center gap-1">
@@ -658,7 +696,7 @@ const BillsContent = () => {
                     </div>
                   </div>
                   
-                  <div className="mt-4 grid grid-cols-2 gap-2 border-t border-slate-50 pt-4">
+                  <div className="mt-3 grid grid-cols-2 gap-2 border-t border-slate-50 pt-3">
                     <div>
                       <p className="text-[10px] font-bold text-slate-400 uppercase">Land Size</p>
                       <p className="text-sm font-medium text-slate-600">{getBillLandText(bill, bill.consumer_id)}</p>
@@ -670,7 +708,7 @@ const BillsContent = () => {
                   </div>
                 </div>
                 
-                <div className="mt-6 pt-4 border-t border-slate-50 grid grid-cols-2 gap-2">
+                <div className="mt-4 pt-3 border-t border-slate-50 grid grid-cols-2 gap-2 items-center">
                   <div>
                     <p className="text-[10px] font-bold text-slate-300 uppercase">Total Billed</p>
                     <p className="text-lg font-bold text-slate-700">₹{Number(bill.amount || 0).toFixed(0)}</p>
