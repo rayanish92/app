@@ -59,7 +59,7 @@ const PaymentsContent = () => {
 
   const getLandText = (consumerId) => {
     const farmer = consumers.find(c => String(c._id || c.id) === String(consumerId)) || {};
-    return `${farmer.land_bigha || 0} বিঘা, ${farmer.land_katha || 0} কাঠা`;
+    return `${Number(farmer.land_bigha || 0)} বিঘা, ${Number(farmer.land_katha || 0)} কাঠা`;
   };
 
   const handleSubmit = async (e) => {
@@ -181,9 +181,7 @@ const PaymentsContent = () => {
                     <Label className="text-[10px] font-bold text-slate-500 ml-2">Method</Label>
                     <Select value={formData.payment_method} onValueChange={(v) => setFormData({ ...formData, payment_method: v })}>
                       <SelectTrigger className="h-14 rounded-2xl bg-slate-50 border-none px-6 text-lg mt-1"><SelectValue /></SelectTrigger>
-                      <SelectContent className="rounded-xl border-none shadow-2xl">
-                        <SelectItem value="cash">Cash</SelectItem><SelectItem value="bank_transfer">Bank Transfer</SelectItem><SelectItem value="upi">UPI</SelectItem><SelectItem value="cheque">Cheque</SelectItem>
-                      </SelectContent>
+                      <SelectContent className="rounded-xl border-none shadow-2xl"><SelectItem value="cash">Cash</SelectItem><SelectItem value="bank_transfer">Bank Transfer</SelectItem><SelectItem value="upi">UPI</SelectItem><SelectItem value="cheque">Cheque</SelectItem></SelectContent>
                     </Select>
                   </div>
                 </div>
