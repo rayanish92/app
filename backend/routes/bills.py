@@ -6,6 +6,7 @@ from pydantic import BaseModel
 from typing import Optional
 from utils.auth import get_current_user
 import logging
+import traceback
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix='/api/bills', tags=['bills'])
@@ -26,6 +27,10 @@ def build_id_query(id_val):
         if str(id_val).isdigit():
             return {"$or": [{"id": id_val}, {"id": str(id_val)}, {"id": int(id_val)}]}
         return {"id": id_val}
+
+# UNIVERSAL COMPATIBILITY FIX: Works on both Pydantic V1 and V2
+def get_model_dict(model):
+    return model.model_dump() if hasattr(model, 'model_dump') else model.dict()
 
 async def update_consumer_due(db, consumer_id):
     try:
@@ -56,6 +61,7 @@ async def get_bills(request: Request):
             if 'id' not in b: b['id'] = b['_id']
         return {'items': bills}
     except Exception as e:
+        logger.error(traceback.format_exc())
         raise HTTPException(status_code=500, detail=f"Backend Crash: {str(e)}")
 
 @router.post('')
@@ -69,7 +75,7 @@ async def create_bill(bill: BillCreate, request: Request):
         if not consumer:
             raise HTTPException(404, "Farmer not found")
 
-        bill_doc = bill.model_dump()
+        bill_doc = get_model_dict(bill)
         bill_doc['consumer_name'] = consumer.get('name', 'Unknown')
         bill_doc['paid'] = 0.0
         bill_doc['due'] = round(bill.amount, 2)
@@ -79,12 +85,19 @@ async def create_bill(bill: BillCreate, request: Request):
         result = await db.bills.insert_one(bill_doc)
         await update_consumer_due(db, bill.consumer_id)
 
+        # Sync the land size back to the farmer profile safely
         await db.consumers.update_one(
             build_id_query(bill.consumer_id),
-            {"$set": {"land_bigha": bill.land_bigha, "land_katha": bill.land_katha}}
+            {"$set": {
+                "land_bigha": float(bill.land_bigha or 0.0), 
+                "land_katha": float(bill.land_katha or 0.0)
+            }}
         )
+
         return {"id": str(result.inserted_id), "status": "success"}
     except Exception as e:
+        error_details = traceback.format_exc()
+        logger.error(f"CREATE BILL CRASH:\n{error_details}")
         raise HTTPException(status_code=500, detail=f"Backend Crash: {str(e)}")
 
 @router.put('/{bill_id}')
@@ -100,21 +113,27 @@ async def update_bill(bill_id: str, bill_update: BillCreate, request: Request):
 
         paid = float(existing_bill.get('paid', 0.0))
         new_due = float(bill_update.amount) - paid
-        # FIX: Removed zero clamp so reducing a bill creates a negative (Advance) due
 
-        update_data = bill_update.model_dump()
+        update_data = get_model_dict(bill_update)
         update_data['due'] = round(new_due, 2)
         update_data['amount'] = round(bill_update.amount, 2)
 
         await db.bills.update_one(build_id_query(bill_id), {"$set": update_data})
         await update_consumer_due(db, bill_update.consumer_id)
 
+        # Sync the land size back to the farmer profile safely
         await db.consumers.update_one(
             build_id_query(bill_update.consumer_id),
-            {"$set": {"land_bigha": bill_update.land_bigha, "land_katha": bill_update.land_katha}}
+            {"$set": {
+                "land_bigha": float(bill_update.land_bigha or 0.0), 
+                "land_katha": float(bill_update.land_katha or 0.0)
+            }}
         )
+
         return {"status": "success"}
     except Exception as e:
+        error_details = traceback.format_exc()
+        logger.error(f"UPDATE BILL CRASH:\n{error_details}")
         raise HTTPException(status_code=500, detail=f"Backend Crash: {str(e)}")
 
 @router.delete('/{bill_id}')
@@ -132,4 +151,5 @@ async def delete_bill(bill_id: str, request: Request):
         await update_consumer_due(db, bill['consumer_id'])
         return {"status": "success"}
     except Exception as e:
+        logger.error(traceback.format_exc())
         raise HTTPException(status_code=500, detail=f"Backend Crash: {str(e)}")
