@@ -133,7 +133,8 @@ const PaymentsContent = () => {
   };
 
   const selectedBill = bills.find(b => String(b._id || b.id) === String(formData.bill_id));
-  const unpaidBills = bills.filter(b => Number(b.due || 0) > 0);
+  // Changed logic to include fully paid bills just in case they want to overpay/advance
+  const validBills = bills.filter(b => Number(b.amount) > 0);
 
   if (loading) return <div className="p-12 text-center font-black animate-pulse">Syncing Payments...</div>;
 
@@ -148,18 +149,26 @@ const PaymentsContent = () => {
               <Button variant="outline" size="sm" onClick={() => handleExport('pdf')}><DownloadSimple size={20} className="text-red-600"/></Button>
             </>
           )}
+          
           <Dialog open={dialogOpen} onOpenChange={(open) => { setDialogOpen(open); if(!open) resetForm(); }}>
             <DialogTrigger asChild><Button className="rounded-full h-12 w-12 bg-[#051039] text-white shadow-xl hover:scale-110"><Plus size={28} /></Button></DialogTrigger>
-            <DialogContent className="rounded-[2.5rem] p-8 md:p-10 max-w-lg border-none shadow-3xl">
+            {/* FIX: Smaller Dialog with Scrollbar (max-w-md, max-h-[85vh], overflow-y-auto) */}
+            <DialogContent className="rounded-[2.5rem] p-6 md:p-8 max-w-md border-none shadow-3xl max-h-[85vh] overflow-y-auto">
               <DialogHeader><DialogTitle className="text-2xl font-light text-[#051039]">Record Payment</DialogTitle></DialogHeader>
               <form onSubmit={handleSubmit} className="space-y-4 pt-4">
                 <Select value={formData.bill_id} onValueChange={(v) => setFormData({ ...formData, bill_id: v })} required>
-                  <SelectTrigger className="h-14 rounded-2xl bg-slate-50 border-none px-6 text-lg"><SelectValue placeholder="Select Pending Bill" /></SelectTrigger>
+                  <SelectTrigger className="h-14 rounded-2xl bg-slate-50 border-none px-6 text-lg"><SelectValue placeholder="Select Bill" /></SelectTrigger>
                   <SelectContent className="rounded-xl border-none shadow-2xl max-h-60">
-                    {unpaidBills.map((b) => <SelectItem key={String(b._id || b.id)} value={String(b._id || b.id)}>{getFarmerName(b.consumer_id, b.consumer_name)} - {b.category?.toUpperCase()} (Due: ₹{Number(b.due || 0).toFixed(0)})</SelectItem>)}
+                    {validBills.map((b) => <SelectItem key={String(b._id || b.id)} value={String(b._id || b.id)}>{getFarmerName(b.consumer_id, b.consumer_name)} - {b.category?.toUpperCase()}</SelectItem>)}
                   </SelectContent>
                 </Select>
-                {selectedBill && <p className="text-xs text-rose-500 font-bold ml-4">Current Due: ₹{Number(selectedBill.due || 0).toFixed(0)}</p>}
+                
+                {selectedBill && (
+                  <p className={`text-xs font-bold ml-4 ${Number(selectedBill.due) < 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+                    {Number(selectedBill.due) < 0 ? 'Current Advance: ₹' : 'Current Due: ₹'}
+                    {Math.abs(Number(selectedBill.due || 0)).toFixed(0)}
+                  </p>
+                )}
 
                 <Select value={formData.category} onValueChange={handleCategorySelect}>
                   <SelectTrigger className="h-14 rounded-2xl bg-slate-50 border-none px-6 text-lg"><SelectValue placeholder="Payment Category" /></SelectTrigger>
@@ -170,7 +179,7 @@ const PaymentsContent = () => {
 
                 {isOthersCat && (
                   <div className="animate-in fade-in slide-in-from-top-4 duration-300">
-                    <Label className="text-[10px] font-bold text-emerald-600 ml-2">Enter Tax Name (Bengali Preferred)</Label>
+                    <Label className="text-[10px] font-bold text-emerald-600 ml-2">Enter Tax Name</Label>
                     <Input value={customCatName} onChange={(e) => setCustomCatName(e.target.value)} className="h-14 rounded-2xl bg-emerald-50 border-emerald-100 px-6 text-lg mt-1" required />
                   </div>
                 )}
@@ -222,7 +231,7 @@ const PaymentsContent = () => {
       </div>
 
       <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
-        <DialogContent className="rounded-[2.5rem] p-8 md:p-10 max-w-lg border-none shadow-3xl">
+        <DialogContent className="rounded-[2.5rem] p-6 md:p-8 max-w-md border-none shadow-3xl max-h-[85vh] overflow-y-auto">
           <DialogHeader><DialogTitle className="text-2xl font-light text-[#051039]">Edit Payment</DialogTitle></DialogHeader>
           <form onSubmit={handleEdit} className="space-y-4 pt-4">
             <div><Label className="text-[10px] font-bold text-slate-500 ml-2">Farmer</Label><div className="h-14 rounded-2xl bg-slate-50 px-6 text-lg flex items-center font-bold text-slate-700 mt-1">{getFarmerName(editingPayment?.consumer_id, editingPayment?.consumer_name)}</div></div>
