@@ -103,7 +103,7 @@ const Login = () => {
           </form>
 
           <div className="text-xs text-center text-muted-foreground space-y-2">
-            <div>Default: admin@waterbill.com / admin123</div>
+           // <div>Default: admin@waterbill.com / admin123</div>
             <div>
               <Link to="/forgot-password" className="text-primary hover:underline" data-testid="forgot-password-link">
                 Forgot Password?
