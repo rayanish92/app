@@ -9,18 +9,15 @@ import os
 import logging
 import httpx  
 import urllib.parse
-from datetime import datetime, timezone
 from pydantic import BaseModel
-from typing import Optional, List
+from typing import Optional
 from contextlib import asynccontextmanager
 
-# --- 1. SETUP & LOGGING ---
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
-# --- 2. MASTER CATEGORY DATA ---
 TAX_CATEGORIES = [
     "boro chas tax",
     "boro seed water tax",
@@ -41,7 +38,6 @@ BENGALI_CAT_MAP = {
     "others water tax": "অন্যান্য জল ট্যাক্স"
 }
 
-# --- 3. DATA MODELS ---
 class RateConfigUpdate(BaseModel):
     rate_per_bigha: float
     rate_per_katha: float
@@ -55,7 +51,6 @@ class BillSMSRequest(BaseModel):
     period: str        
     category: str 
 
-# --- 4. DATABASE CONNECTION & LIFESPAN ---
 MONGO_URL = os.environ.get('MONGO_URL')
 DB_NAME = os.environ.get('DB_NAME', 'water_bill_tracker')
 client = AsyncIOMotorClient(MONGO_URL)
@@ -70,7 +65,6 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="Water Tracker API", lifespan=lifespan)
 app.state.db = db
 
-# --- 5. ERROR HANDLING & CORS ---
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
     logger.error(f"422 Validation Error: {exc.errors()}")
@@ -84,13 +78,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# --- 6. ROUTER IMPORTS ---
 from routes.auth import router as auth_router
 from routes.consumers import router as consumers_router
 from routes.bills import router as bills_router
 from routes.payments import router as payments_router
 from routes.export import router as export_router
-from utils.auth import hash_password, verify_password, get_current_user
+from utils.auth import get_current_user
 
 app.include_router(auth_router, prefix="/api")
 app.include_router(consumers_router, prefix="/api")
@@ -98,7 +91,6 @@ app.include_router(bills_router)
 app.include_router(payments_router) 
 app.include_router(export_router, prefix="/api")
 
-# --- 7. ENDPOINTS ---
 @app.get("/health")
 async def health():
     return {"status": "ok", "db": DB_NAME}
@@ -145,7 +137,6 @@ async def send_bill_notification(sms: BillSMSRequest, request: Request):
     if not consumer: 
         raise HTTPException(404, "Consumer not found")
     
-    # FORMAT THE MESSAGE WITH BENGALI, LAND AREA, AND CUSTOM CATEGORY
     bengali_cat = BENGALI_CAT_MAP.get(sms.category.lower(), sms.category)
     msg = f"নমস্কার {consumer['name']},\nবিভাগ: {bengali_cat}\nজমি: {sms.land_area}\nপরিমাণ: ₹{sms.amount}\nধন্যবাদ।"
     
@@ -160,5 +151,4 @@ async def send_bill_notification(sms: BillSMSRequest, request: Request):
             )
             
     whatsapp_url = f"https://wa.me/91{consumer['phone']}?text={urllib.parse.quote(msg)}"
-    
     return {'sms_status': 'Sent', 'whatsapp_url': whatsapp_url}
