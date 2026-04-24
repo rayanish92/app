@@ -57,12 +57,9 @@ const BillsContent = () => {
     try {
       const targetCat = TAX_CATEGORIES.includes(categoryToFetch) ? categoryToFetch : TAX_CATEGORIES[0];
       const res = await axios.get(`${API_URL}/api/rate-config?category=${targetCat}`, { withCredentials: true });
-      if (res.data) setRateConfig({
-        ...res.data,
-        katha_to_bigha_ratio: res.data.katha_to_bigha_ratio || 20
-      });
+      if (res.data) setRateConfig({ ...res.data, katha_to_bigha_ratio: res.data.katha_to_bigha_ratio || 20 });
       return res.data;
-    } catch (e) { console.error("Failed to fetch rates"); return null; }
+    } catch (e) { return null; }
   };
 
   useEffect(() => { fetchData(); fetchRateConfig(TAX_CATEGORIES[0]); }, [fetchData]);
@@ -80,18 +77,14 @@ const BillsContent = () => {
     const farmer = consumers.find(c => String(c._id || c.id) === String(val));
     const b = farmer ? (farmer.land_bigha || 0) : '';
     const k = farmer ? (farmer.land_katha || 0) : '';
-    
     let newAmt = formData.amount;
     if (!isOthersCat) newAmt = calculateAmount(b, k, rateConfig);
-    
     setFormData({ ...formData, consumer_id: val, land_bigha: b, land_katha: k, amount: newAmt });
   };
 
   const handleLandChange = (field, value) => {
     const newForm = { ...formData, [field]: value };
-    if (!isOthersCat) {
-      newForm.amount = calculateAmount(newForm.land_bigha, newForm.land_katha, rateConfig);
-    }
+    if (!isOthersCat) newForm.amount = calculateAmount(newForm.land_bigha, newForm.land_katha, rateConfig);
     setFormData(newForm);
   };
 
@@ -139,16 +132,26 @@ const BillsContent = () => {
     } catch (error) { toast.error('Failed to save rates'); }
   };
 
+  const syncFarmerLandSize = async () => {
+    const farmer = consumers.find(c => String(c._id || c.id) === String(formData.consumer_id));
+    if (farmer && (Number(farmer.land_bigha) !== Number(formData.land_bigha) || Number(farmer.land_katha) !== Number(formData.land_katha))) {
+      try {
+        await axios.put(`${API_URL}/api/consumers/${farmer._id || farmer.id}`, {
+          ...farmer,
+          land_bigha: parseFloat(formData.land_bigha) || 0,
+          land_katha: parseFloat(formData.land_katha) || 0
+        }, { withCredentials: true });
+      } catch (err) { console.error("Failed to sync", err); }
+    }
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!formData.consumer_id) return toast.error("Please select a farmer.");
-    if (!formData.amount || Number(formData.amount) <= 0) return toast.error("Please enter a valid amount.");
-    if (isOthersCat && !customCatName) return toast.error("Please enter the custom tax name.");
+    if (!formData.consumer_id || !formData.amount) return toast.error("Check farmer and amount.");
+    if (isOthersCat && !customCatName) return toast.error("Enter custom tax name.");
 
     try {
       const currentRatio = parseFloat(rateConfig.katha_to_bigha_ratio) || 20;
-      
-      // Because we updated routes/bills.py, the backend will now happily accept this FULL payload!
       const billPayload = { 
         consumer_id: String(formData.consumer_id),
         category: isOthersCat ? customCatName : formData.category, 
@@ -158,15 +161,11 @@ const BillsContent = () => {
         total_land_in_bigha: (parseFloat(formData.land_bigha) || 0) + ((parseFloat(formData.land_katha) || 0) / currentRatio),
         notes: formData.notes || ""
       };
-      
       await axios.post(`${API_URL}/api/bills`, billPayload, { withCredentials: true });
+      await syncFarmerLandSize();
       toast.success('Bill generated');
-      setDialogOpen(false); 
-      resetForm(); 
-      await fetchData();
-    } catch (error) { 
-      toast.error(error.response?.data?.detail || 'Failed to generate bill'); 
-    }
+      setDialogOpen(false); resetForm(); await fetchData();
+    } catch (error) { toast.error(error.response?.data?.detail || 'Failed to generate bill'); }
   };
 
   const handleEdit = async (e) => {
@@ -174,7 +173,6 @@ const BillsContent = () => {
     if (isOthersCat && !customCatName) return toast.error("Please enter the custom tax name.");
     try {
       const currentRatio = parseFloat(rateConfig.katha_to_bigha_ratio) || 20;
-
       const payload = { 
         consumer_id: String(formData.consumer_id),
         category: isOthersCat ? customCatName : formData.category, 
@@ -185,10 +183,9 @@ const BillsContent = () => {
         notes: formData.notes || ""
       };
       await axios.put(`${API_URL}/api/bills/${editingBill._id || editingBill.id}`, payload, { withCredentials: true });
+      await syncFarmerLandSize();
       toast.success('Bill updated');
-      setEditDialogOpen(false); 
-      resetForm(); 
-      await fetchData();
+      setEditDialogOpen(false); resetForm(); await fetchData();
     } catch (error) { toast.error(error.response?.data?.detail || 'Failed to update bill'); }
   };
 
@@ -307,10 +304,9 @@ const BillsContent = () => {
           
           <Dialog open={dialogOpen} onOpenChange={(open) => { setDialogOpen(open); if(!open) resetForm(); }}>
             <DialogTrigger asChild><Button className="rounded-full h-12 w-12 bg-[#051039] text-white shadow-xl hover:scale-110"><Plus size={28} /></Button></DialogTrigger>
-            <DialogContent className="rounded-[2.5rem] p-8 md:p-10 max-w-lg border-none shadow-3xl">
+            <DialogContent className="rounded-[2.5rem] p-6 md:p-8 max-w-md border-none shadow-3xl max-h-[85vh] overflow-y-auto">
               <DialogHeader><DialogTitle className="text-2xl font-light text-[#051039]">Generate New Bill</DialogTitle></DialogHeader>
               <form onSubmit={handleSubmit} className="space-y-4 pt-4">
-                
                 <Select value={formData.consumer_id} onValueChange={handleFarmerSelect} required>
                   <SelectTrigger className="h-14 rounded-2xl bg-slate-50 border-none px-6 text-lg"><SelectValue placeholder="Select Farmer" /></SelectTrigger>
                   <SelectContent className="rounded-xl border-none shadow-2xl max-h-60">
@@ -327,7 +323,7 @@ const BillsContent = () => {
 
                 {isOthersCat && (
                   <div className="animate-in fade-in slide-in-from-top-4 duration-300">
-                    <Label className="text-[10px] font-bold text-emerald-600 uppercase ml-2">Enter Tax Name</Label>
+                    <Label className="text-[10px] font-bold text-emerald-600 uppercase ml-2">Enter Tax Name (Bengali Preferred)</Label>
                     <Input value={customCatName} onChange={(e) => setCustomCatName(e.target.value)} className="h-14 rounded-2xl bg-emerald-50 border-emerald-100 px-6 text-lg mt-1" required />
                   </div>
                 )}
@@ -363,45 +359,57 @@ const BillsContent = () => {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {bills.map((bill) => (
-          <div key={bill._id || bill.id} className="bg-white border p-6 rounded-[2rem] shadow-sm hover:shadow-xl transition-all group relative overflow-hidden flex flex-col justify-between">
-            <div>
-              <div className="flex justify-between items-start">
-                <div className="flex-1">
-                  <span className="text-[10px] bg-purple-50 text-purple-700 px-3 py-1 rounded-full uppercase font-black border border-purple-100">{bill.category ? String(bill.category).toUpperCase() : 'WATER TAX'}</span>
-                  <h3 className="text-xl font-bold text-slate-800 mt-3 leading-tight truncate pr-2">{getFarmerName(bill.consumer_id, bill.consumer_name)}</h3>
-                  <p className="text-xs font-bold text-slate-400 mt-0.5 flex items-center gap-1"><Calendar size={14} weight="fill"/> {bill.created_at ? new Date(bill.created_at).toLocaleDateString() : 'Unknown'}</p>
+        {bills.map((bill) => {
+          const isNegative = Number(bill.due) < 0;
+          return (
+            <div key={bill._id || bill.id} className="bg-white border p-6 rounded-[2rem] shadow-sm hover:shadow-xl transition-all group relative overflow-hidden flex flex-col justify-between">
+              <div>
+                <div className="flex justify-between items-start">
+                  <div className="flex-1">
+                    <span className="text-[10px] bg-purple-50 text-purple-700 px-3 py-1 rounded-full uppercase font-black border border-purple-100">{bill.category ? String(bill.category).toUpperCase() : 'WATER TAX'}</span>
+                    <h3 className="text-xl font-bold text-slate-800 mt-3 leading-tight truncate pr-2">{getFarmerName(bill.consumer_id, bill.consumer_name)}</h3>
+                    <p className="text-xs font-bold text-slate-400 mt-0.5 flex items-center gap-1"><Calendar size={14} weight="fill"/> {bill.created_at ? new Date(bill.created_at).toLocaleDateString() : 'Unknown'}</p>
+                  </div>
+                  <div className="flex flex-col gap-1 opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity bg-white pl-2">
+                    <Button type="button" variant="ghost" size="sm" onClick={() => sendWhatsApp(bill)} className="text-emerald-500 rounded-full h-8 w-8 p-0"><WhatsappLogo size={22} weight="fill"/></Button>
+                    <Button type="button" variant="ghost" size="sm" onClick={() => handleSendSMS(bill)} className="text-blue-500 rounded-full h-8 w-8 p-0"><ChatCircleDots size={22} weight="fill"/></Button>
+                    <Button type="button" variant="ghost" size="sm" onClick={() => openEditDialog(bill)} className="text-slate-400 rounded-full h-8 w-8 p-0"><Pencil size={20}/></Button>
+                    <Button type="button" variant="ghost" size="sm" onClick={() => handleDelete(bill._id || bill.id)} className="text-rose-400 rounded-full h-8 w-8 p-0"><Trash size={20}/></Button>
+                  </div>
                 </div>
-                <div className="flex flex-col gap-1 opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity bg-white pl-2">
-                  <Button type="button" variant="ghost" size="sm" onClick={() => sendWhatsApp(bill)} className="text-emerald-500 rounded-full h-8 w-8 p-0"><WhatsappLogo size={22} weight="fill"/></Button>
-                  <Button type="button" variant="ghost" size="sm" onClick={() => handleSendSMS(bill)} className="text-blue-500 rounded-full h-8 w-8 p-0"><ChatCircleDots size={22} weight="fill"/></Button>
-                  <Button type="button" variant="ghost" size="sm" onClick={() => openEditDialog(bill)} className="text-slate-400 rounded-full h-8 w-8 p-0"><Pencil size={20}/></Button>
-                  <Button type="button" variant="ghost" size="sm" onClick={() => handleDelete(bill._id || bill.id)} className="text-rose-400 rounded-full h-8 w-8 p-0"><Trash size={20}/></Button>
+                
+                <div className="mt-4 grid grid-cols-2 gap-2 border-t border-slate-50 pt-4">
+                  <div>
+                    <p className="text-[10px] font-bold text-slate-400 uppercase">Land Size</p>
+                    <p className="text-sm font-medium text-slate-600">{getBillLandText(bill, bill.consumer_id)}</p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-bold text-slate-400 uppercase">Notes</p>
+                    <p className="text-sm font-medium text-slate-600 truncate">{bill.notes || '-'}</p>
+                  </div>
                 </div>
               </div>
               
-              <div className="mt-4 grid grid-cols-2 gap-2 border-t border-slate-50 pt-4">
-                <div>
-                  <p className="text-[10px] font-bold text-slate-400 uppercase">Land Size</p>
-                  <p className="text-sm font-medium text-slate-600">{getBillLandText(bill, bill.consumer_id)}</p>
-                </div>
-                <div>
-                  <p className="text-[10px] font-bold text-slate-400 uppercase">Notes</p>
-                  <p className="text-sm font-medium text-slate-600 truncate">{bill.notes || '-'}</p>
+              <div className="mt-6 pt-4 border-t border-slate-50 grid grid-cols-2 gap-2">
+                <div><p className="text-[10px] font-bold text-slate-300 uppercase">Total Billed</p><p className="text-lg font-bold text-slate-700">₹{Number(bill.amount || 0).toFixed(0)}</p></div>
+                
+                {/* FIX: Displays Green 'Advance' if due is negative! */}
+                <div className={`text-right p-2 rounded-xl border ${isNegative ? 'bg-emerald-50 border-emerald-100' : 'bg-rose-50 border-rose-100'}`}>
+                  <p className={`text-[10px] font-bold uppercase ${isNegative ? 'text-emerald-500' : 'text-rose-400'}`}>
+                    {isNegative ? 'Advance Paid' : 'Pending Due'}
+                  </p>
+                  <p className={`text-lg font-black ${isNegative ? 'text-emerald-600' : 'text-rose-600'}`}>
+                    ₹{Math.abs(Number(bill.due || 0)).toFixed(0)}
+                  </p>
                 </div>
               </div>
             </div>
-            
-            <div className="mt-6 pt-4 border-t border-slate-50 grid grid-cols-2 gap-2">
-              <div><p className="text-[10px] font-bold text-slate-300 uppercase">Total Billed</p><p className="text-lg font-bold text-slate-700">₹{Number(bill.amount || 0).toFixed(0)}</p></div>
-              <div className="text-right bg-rose-50 p-2 rounded-xl border border-rose-100"><p className="text-[10px] font-bold text-rose-400 uppercase">Pending Due</p><p className="text-lg font-black text-rose-600">₹{Number(bill.due || 0).toFixed(0)}</p></div>
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
-        <DialogContent className="rounded-[2.5rem] p-8 md:p-10 max-w-lg border-none shadow-3xl">
+        <DialogContent className="rounded-[2.5rem] p-6 md:p-8 max-w-md border-none shadow-3xl max-h-[85vh] overflow-y-auto">
           <DialogHeader><DialogTitle className="text-2xl font-light text-[#051039]">Edit Bill</DialogTitle></DialogHeader>
           <form onSubmit={handleEdit} className="space-y-4 pt-4">
             <div><Label className="text-[10px] font-bold text-slate-500 ml-2">Farmer</Label><div className="h-14 rounded-2xl bg-slate-50 px-6 text-lg flex items-center font-bold text-slate-700 mt-1">{getFarmerName(editingBill?.consumer_id, editingBill?.consumer_name)}</div></div>
