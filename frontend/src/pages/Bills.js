@@ -67,7 +67,6 @@ const BillsContent = () => {
 
   useEffect(() => { fetchData(); fetchRateConfig(TAX_CATEGORIES[0]); }, [fetchData]);
 
-  // --- STRICT MATH CALCULATOR ---
   const calculateAmount = (bigha, katha, rates) => {
     const b = parseFloat(bigha) || 0;
     const k = parseFloat(katha) || 0;
@@ -77,7 +76,6 @@ const BillsContent = () => {
     return total > 0 ? total.toFixed(2) : '';
   };
 
-  // --- EVENT-DRIVEN FORM HANDLERS ---
   const handleFarmerSelect = (val) => {
     const farmer = consumers.find(c => String(c._id || c.id) === String(val));
     const b = farmer ? (farmer.land_bigha || 0) : '';
@@ -100,7 +98,6 @@ const BillsContent = () => {
   const handleCategorySelect = async (val) => {
     setIsOthersCat(val === 'others water tax');
     let newForm = { ...formData, category: val };
-    
     if (val !== 'others water tax') {
       const rates = await fetchRateConfig(val);
       if (rates) newForm.amount = calculateAmount(newForm.land_bigha, newForm.land_katha, rates);
@@ -108,7 +105,6 @@ const BillsContent = () => {
     setFormData(newForm);
   };
 
-  // --- HELPERS ---
   const getFarmerName = (consumerId, fallbackName) => {
     const farmer = consumers.find(c => String(c._id || c.id) === String(consumerId));
     if (farmer && farmer.name) return farmer.name;
@@ -127,7 +123,6 @@ const BillsContent = () => {
     return getLandText(consumerId);
   };
 
-  // --- ACTIONS ---
   const handleRateUpdate = async (e) => {
     e.preventDefault();
     try {
@@ -144,20 +139,6 @@ const BillsContent = () => {
     } catch (error) { toast.error('Failed to save rates'); }
   };
 
-  // UPDATE FARMER ACREAGE IN BACKGROUND
-  const syncFarmerLandSize = async () => {
-    const farmer = consumers.find(c => String(c._id || c.id) === String(formData.consumer_id));
-    if (farmer && (Number(farmer.land_bigha) !== Number(formData.land_bigha) || Number(farmer.land_katha) !== Number(formData.land_katha))) {
-      try {
-        await axios.put(`${API_URL}/api/consumers/${farmer._id || farmer.id}`, {
-          ...farmer,
-          land_bigha: parseFloat(formData.land_bigha) || 0,
-          land_katha: parseFloat(formData.land_katha) || 0
-        }, { withCredentials: true });
-      } catch (err) { console.error("Failed to sync land size", err); }
-    }
-  };
-
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!formData.consumer_id) return toast.error("Please select a farmer.");
@@ -165,25 +146,26 @@ const BillsContent = () => {
     if (isOthersCat && !customCatName) return toast.error("Please enter the custom tax name.");
 
     try {
-      // STRICT PAYLOAD: Only sends exactly what the backend expects to prevent 422 crash
-      const strictBillPayload = { 
+      const currentRatio = parseFloat(rateConfig.katha_to_bigha_ratio) || 20;
+      
+      // Because we updated routes/bills.py, the backend will now happily accept this FULL payload!
+      const billPayload = { 
         consumer_id: String(formData.consumer_id),
         category: isOthersCat ? customCatName : formData.category, 
         amount: parseFloat(formData.amount) || 0,
+        land_bigha: parseFloat(formData.land_bigha) || 0,
+        land_katha: parseFloat(formData.land_katha) || 0,
+        total_land_in_bigha: (parseFloat(formData.land_bigha) || 0) + ((parseFloat(formData.land_katha) || 0) / currentRatio),
         notes: formData.notes || ""
       };
       
-      await axios.post(`${API_URL}/api/bills`, strictBillPayload, { withCredentials: true });
-      await syncFarmerLandSize(); // Saves land sizes to the Farmers DB instead!
-
+      await axios.post(`${API_URL}/api/bills`, billPayload, { withCredentials: true });
       toast.success('Bill generated');
       setDialogOpen(false); 
       resetForm(); 
       await fetchData();
     } catch (error) { 
-      const errDetail = error.response?.data?.detail;
-      const msg = Array.isArray(errDetail) ? errDetail[0].msg : errDetail;
-      toast.error(`Failed: ${msg || 'Server Error'}`); 
+      toast.error(error.response?.data?.detail || 'Failed to generate bill'); 
     }
   };
 
@@ -191,26 +173,23 @@ const BillsContent = () => {
     e.preventDefault();
     if (isOthersCat && !customCatName) return toast.error("Please enter the custom tax name.");
     try {
-      // STRICT PAYLOAD
-      const strictBillPayload = { 
+      const currentRatio = parseFloat(rateConfig.katha_to_bigha_ratio) || 20;
+
+      const payload = { 
         consumer_id: String(formData.consumer_id),
         category: isOthersCat ? customCatName : formData.category, 
         amount: parseFloat(formData.amount) || 0,
+        land_bigha: parseFloat(formData.land_bigha) || 0,
+        land_katha: parseFloat(formData.land_katha) || 0,
+        total_land_in_bigha: (parseFloat(formData.land_bigha) || 0) + ((parseFloat(formData.land_katha) || 0) / currentRatio),
         notes: formData.notes || ""
       };
-      
-      await axios.put(`${API_URL}/api/bills/${editingBill._id || editingBill.id}`, strictBillPayload, { withCredentials: true });
-      await syncFarmerLandSize();
-
+      await axios.put(`${API_URL}/api/bills/${editingBill._id || editingBill.id}`, payload, { withCredentials: true });
       toast.success('Bill updated');
       setEditDialogOpen(false); 
       resetForm(); 
       await fetchData();
-    } catch (error) { 
-      const errDetail = error.response?.data?.detail;
-      const msg = Array.isArray(errDetail) ? errDetail[0].msg : errDetail;
-      toast.error(`Failed: ${msg || 'Server Error'}`); 
-    }
+    } catch (error) { toast.error(error.response?.data?.detail || 'Failed to update bill'); }
   };
 
   const handleDelete = async (billId) => {
@@ -221,7 +200,6 @@ const BillsContent = () => {
     } catch (error) { toast.error('Failed to delete'); }
   };
 
-  // --- MESSAGING ---
   const handleSendSMS = async (bill) => {
     try {
       const consumerId = String(bill.consumer_id);
@@ -262,8 +240,8 @@ const BillsContent = () => {
       amount: bill.amount || '', 
       category: isCustom ? 'others water tax' : (bill.category?.toLowerCase() || TAX_CATEGORIES[0]), 
       notes: bill.notes || '',
-      land_bigha: farmer ? (farmer.land_bigha || 0) : 0,
-      land_katha: farmer ? (farmer.land_katha || 0) : 0
+      land_bigha: bill.land_bigha !== undefined ? bill.land_bigha : (farmer ? (farmer.land_bigha || 0) : 0),
+      land_katha: bill.land_katha !== undefined ? bill.land_katha : (farmer ? (farmer.land_katha || 0) : 0)
     });
     setEditDialogOpen(true);
   };
@@ -349,7 +327,7 @@ const BillsContent = () => {
 
                 {isOthersCat && (
                   <div className="animate-in fade-in slide-in-from-top-4 duration-300">
-                    <Label className="text-[10px] font-bold text-emerald-600 uppercase ml-2">Enter Tax Name (Bengali Preferred)</Label>
+                    <Label className="text-[10px] font-bold text-emerald-600 uppercase ml-2">Enter Tax Name</Label>
                     <Input value={customCatName} onChange={(e) => setCustomCatName(e.target.value)} className="h-14 rounded-2xl bg-emerald-50 border-emerald-100 px-6 text-lg mt-1" required />
                   </div>
                 )}
