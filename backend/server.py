@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 from pathlib import Path
 import os
 import logging
-import httpx  # Make sure to run: pip install httpx
+import httpx  
 import urllib.parse
 from datetime import datetime, timezone
 from pydantic import BaseModel
@@ -26,6 +26,8 @@ TAX_CATEGORIES = [
     "boro seed water tax",
     "potato water tax",
     "mustard water tax",
+    "borsa chas water tax",
+    "borsa seed/bij water tax",
     "others water tax"
 ]
 
@@ -34,6 +36,8 @@ BENGALI_CAT_MAP = {
     "boro seed water tax": "বোরো বীজ জল ট্যাক্স",
     "potato water tax": "আলু জল ট্যাক্স",
     "mustard water tax": "সরষে জল ট্যাক্স",
+    "borsa chas water tax": "বর্ষা চাষ ট্যাক্স",
+    "borsa seed/bij water tax": "বর্ষা বীজ জল ট্যাক্স",
     "others water tax": "অন্যান্য জল ট্যাক্স"
 }
 
@@ -59,10 +63,8 @@ db = client[DB_NAME]
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup logic: Ensures the email index is unique
     await db.users.create_index('email', unique=True)
     yield
-    # Shutdown logic
     client.close()
 
 app = FastAPI(title="Water Tracker API", lifespan=lifespan)
@@ -76,7 +78,6 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 
 app.add_middleware(
     CORSMiddleware,
-    # Added localhost so you can easily test locally alongside Render
     allow_origins=["https://water-management-frontend-bkqh.onrender.com", "http://localhost:3000", "http://localhost:5173"], 
     allow_credentials=True, 
     allow_methods=["*"],
@@ -91,15 +92,13 @@ from routes.payments import router as payments_router
 from routes.export import router as export_router
 from utils.auth import hash_password, verify_password, get_current_user
 
-# --- THE FIX IS RIGHT HERE ---
 app.include_router(auth_router, prefix="/api")
 app.include_router(consumers_router, prefix="/api")
-app.include_router(bills_router)  # <-- Leave bills alone, it already has prefix='/api/bills' inside its own file
-app.include_router(payments_router) # <-- FIX: Removed the extra prefix="/api" to prevent Double Prefix bug!
+app.include_router(bills_router)  
+app.include_router(payments_router) 
 app.include_router(export_router, prefix="/api")
 
 # --- 7. ENDPOINTS ---
-
 @app.get("/health")
 async def health():
     return {"status": "ok", "db": DB_NAME}
@@ -142,16 +141,14 @@ async def get_dashboard_stats(request: Request):
 async def send_bill_notification(sms: BillSMSRequest, request: Request):
     await get_current_user(request, db)
     
-    # 1. Ensure we find the consumer
     consumer = await db.consumers.find_one({'id': sms.consumer_id})
     if not consumer: 
         raise HTTPException(404, "Consumer not found")
     
-    # 2. Format the message
-    bengali_cat = BENGALI_CAT_MAP.get(sms.category.lower(), "জলের বিল")
-    msg = f"নমস্কার {consumer['name']}, বিভাগ: {bengali_cat}\nপরিমাণ: ₹{sms.amount}\nধন্যবাদ।"
+    # FORMAT THE MESSAGE WITH BENGALI, LAND AREA, AND CUSTOM CATEGORY
+    bengali_cat = BENGALI_CAT_MAP.get(sms.category.lower(), sms.category)
+    msg = f"নমস্কার {consumer['name']},\nবিভাগ: {bengali_cat}\nজমি: {sms.land_area}\nপরিমাণ: ₹{sms.amount}\nধন্যবাদ।"
     
-    # 3. Send SMS asynchronously so the server doesn't freeze
     api_key = os.environ.get('FAST2SMS_API_KEY')
     if api_key:
         async with httpx.AsyncClient() as async_client:
@@ -162,7 +159,6 @@ async def send_bill_notification(sms: BillSMSRequest, request: Request):
                 timeout=10
             )
             
-    # 4. Generate the WhatsApp link
     whatsapp_url = f"https://wa.me/91{consumer['phone']}?text={urllib.parse.quote(msg)}"
     
     return {'sms_status': 'Sent', 'whatsapp_url': whatsapp_url}
