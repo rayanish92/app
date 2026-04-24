@@ -18,15 +18,23 @@ class PaymentCreate(BaseModel):
     category: str
     notes: Optional[str] = ""
 
+# BULLETPROOF ID SEARCH
 def build_id_query(id_val):
+    queries = [
+        {"id": id_val}, 
+        {"id": str(id_val)}, 
+        {"_id": str(id_val)}
+    ]
     try:
-        return {"_id": ObjectId(str(id_val))}
+        queries.append({"_id": ObjectId(str(id_val))})
     except InvalidId:
-        if str(id_val).isdigit():
-            return {"$or": [{"id": id_val}, {"id": str(id_val)}, {"id": int(id_val)}]}
-        return {"id": id_val}
+        pass
+    
+    if str(id_val).isdigit():
+        queries.append({"id": int(id_val)})
+        
+    return {"$or": queries}
 
-# UNIVERSAL COMPATIBILITY FIX
 def get_model_dict(model):
     return model.model_dump() if hasattr(model, 'model_dump') else model.dict()
 
@@ -95,6 +103,8 @@ async def create_payment(payment: PaymentCreate, request: Request):
             await update_consumer_due(db, bill.get('consumer_id'))
 
         return {"id": str(result.inserted_id), "status": "success"}
+    except HTTPException:
+        raise
     except Exception as e:
         error_details = traceback.format_exc()
         logger.error(f"CREATE PAYMENT CRASH:\n{error_details}")
@@ -129,6 +139,8 @@ async def update_payment(payment_id: str, payment_update: PaymentCreate, request
                 await update_consumer_due(db, bill.get('consumer_id'))
 
         return {"status": "success"}
+    except HTTPException:
+        raise
     except Exception as e:
         error_details = traceback.format_exc()
         logger.error(f"UPDATE PAYMENT CRASH:\n{error_details}")
@@ -158,6 +170,8 @@ async def delete_payment(payment_id: str, request: Request):
 
         await db.payments.delete_one(build_id_query(payment_id))
         return {"status": "success"}
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(traceback.format_exc())
         raise HTTPException(status_code=500, detail=f"Backend Crash: {str(e)}")
