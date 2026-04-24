@@ -40,8 +40,6 @@ const PaymentsContent = () => {
   const [loading, setLoading] = useState(true);
   
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [editDialogOpen, setEditDialogOpen] = useState(false);
-  const [editingPayment, setEditingPayment] = useState(null);
   const [formData, setFormData] = useState({
     bill_id: '', amount: '', payment_method: 'cash', category: TAX_CATEGORIES[0], notes: ''
   });
@@ -58,7 +56,6 @@ const PaymentsContent = () => {
       setBills(Array.isArray(billsRes.data?.items) ? billsRes.data.items : (Array.isArray(billsRes.data) ? billsRes.data : []));
       setConsumers(Array.isArray(consumersRes.data?.items) ? consumersRes.data.items : (Array.isArray(consumersRes.data) ? consumersRes.data : []));
     } catch (error) {
-      // FIX: This will now display the EXACT error coming from your backend
       const errorMessage = error.response?.data?.detail || error.message || 'Unknown Network Error';
       toast.error(`Error: ${errorMessage}`);
       console.error("Full fetch error:", error);
@@ -66,8 +63,17 @@ const PaymentsContent = () => {
       setLoading(false);
     }
   }, []);
-  
+
   useEffect(() => { fetchData(); }, [fetchData]);
+
+  // --- THE FIX: SMART NAME LOOKUP ---
+  // This cross-references the bill/payment ID with the Farmers list to guarantee the name shows up
+  const getFarmerName = (consumerId, fallbackName) => {
+    const farmer = consumers.find(c => String(c._id || c.id) === String(consumerId));
+    if (farmer && farmer.name) return farmer.name;
+    if (fallbackName && fallbackName !== 'Unknown' && fallbackName !== 'Unknown Farmer') return fallbackName;
+    return 'Unknown Farmer';
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -101,6 +107,7 @@ const PaymentsContent = () => {
     try {
       const bill = bills.find(b => String(b._id || b.id) === String(payment.bill_id)) || {};
       const consumerId = String(payment.consumer_id || bill.consumer_id);
+      const farmerName = getFarmerName(consumerId, payment.consumer_name);
       
       const payload = {
         consumer_id: consumerId,
@@ -111,7 +118,7 @@ const PaymentsContent = () => {
       };
       
       await axios.post(`${API_URL}/api/sms/send-bill`, payload, { withCredentials: true });
-      toast.success(`Receipt SMS queued for ${payment.consumer_name || 'Farmer'}`);
+      toast.success(`Receipt SMS queued for ${farmerName}`);
     } catch (e) { 
       toast.error('Failed to send SMS. Check your API Key.'); 
     }
@@ -121,10 +128,11 @@ const PaymentsContent = () => {
     const bill = bills.find(b => String(b._id || b.id) === String(payment.bill_id)) || {};
     const consumerId = String(payment.consumer_id || bill.consumer_id);
     const consumer = consumers.find(c => String(c._id || c.id) === consumerId);
+    const farmerName = getFarmerName(consumerId, payment.consumer_name);
 
     if (!consumer?.phone) return toast.error("No phone number found for this farmer.");
     
-    const msg = `নমস্কার ${payment.consumer_name || 'চাষী'},\nবিভাগ: ${(payment.category || 'বিল').toUpperCase()}\nজমা পরিমাণ: ₹${Number(payment.amount || 0)}\nধন্যবাদ।`;
+    const msg = `নমস্কার ${farmerName},\nবিভাগ: ${(payment.category || 'বিল').toUpperCase()}\nজমা পরিমাণ: ₹${Number(payment.amount || 0)}\nধন্যবাদ।`;
     window.open(`https://wa.me/91${consumer.phone}?text=${encodeURIComponent(msg)}`, '_blank');
   };
 
@@ -134,7 +142,7 @@ const PaymentsContent = () => {
     if (payments.length === 0) return toast.error("No data to export");
     const headers = ['Farmer', 'Category', 'Amount', 'Method', 'Notes', 'Date'];
     const rows = payments.map(p => [
-      p.consumer_name || 'Unknown', 
+      getFarmerName(p.consumer_id, p.consumer_name), 
       p.category ? String(p.category).toUpperCase() : '-', 
       Number(p.amount || 0), 
       p.payment_method || 'cash', 
@@ -184,7 +192,8 @@ const PaymentsContent = () => {
                     ) : (
                       unpaidBills.map((b) => (
                         <SelectItem key={String(b._id || b.id)} value={String(b._id || b.id)}>
-                          {b.consumer_name || 'Unknown'} - {b.category?.toUpperCase() || 'TAX'} (Due: ₹{Number(b.due || 0).toFixed(0)})
+                          {/* VISUAL LOOKUP APPLIED HERE */}
+                          {getFarmerName(b.consumer_id, b.consumer_name)} - {b.category?.toUpperCase() || 'TAX'} (Due: ₹{Number(b.due || 0).toFixed(0)})
                         </SelectItem>
                       ))
                     )}
@@ -244,7 +253,8 @@ const PaymentsContent = () => {
                     {payment.category ? String(payment.category).toUpperCase() : 'PAYMENT'}
                   </span>
                   <h3 className="text-xl font-bold text-slate-800 mt-3 leading-tight truncate pr-2">
-                    {payment.consumer_name || 'Unknown Farmer'}
+                    {/* VISUAL LOOKUP APPLIED HERE */}
+                    {getFarmerName(payment.consumer_id, payment.consumer_name)}
                   </h3>
                   <p className="text-xs font-bold text-slate-400 mt-0.5 uppercase tracking-tighter flex items-center gap-1">
                     <Calendar size={14} weight="fill"/> {payment.created_at ? new Date(payment.created_at).toLocaleDateString() : 'Unknown Date'}
