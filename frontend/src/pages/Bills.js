@@ -5,7 +5,7 @@ import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '../components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
-import { Plus, Calendar, Pencil, Trash, DownloadSimple, WhatsappLogo, ChatCircleDots, Gear } from '@phosphor-icons/react';
+import { Plus, Calendar, Pencil, Trash, DownloadSimple, WhatsappLogo, ChatCircleDots, Gear, Funnel, MagnifyingGlass } from '@phosphor-icons/react';
 import { toast } from 'sonner';
 import { exportToCSV, exportToPDF } from '../lib/exportUtils';
 import { TAX_CATEGORIES, getBengaliCategory } from '../lib/constants';
@@ -26,14 +26,15 @@ const BillsContent = () => {
   const [consumers, setConsumers] = useState([]);
   const [loading, setLoading] = useState(true);
   
+  // Dialog States
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [rateDialogOpen, setRateDialogOpen] = useState(false);
   const [editingBill, setEditingBill] = useState(null);
 
+  // Form States
   const [isOthersCat, setIsOthersCat] = useState(false);
   const [customCatName, setCustomCatName] = useState('');
-
   const [formData, setFormData] = useState({ 
     consumer_id: '', amount: '', category: TAX_CATEGORIES[0], notes: '', land_bigha: '', land_katha: '' 
   });
@@ -41,6 +42,11 @@ const BillsContent = () => {
   const [rateConfig, setRateConfig] = useState({ 
     rate_per_bigha: 0, rate_per_katha: 0, katha_to_bigha_ratio: 20, category: TAX_CATEGORIES[0] 
   });
+
+  // FILTER & SEARCH STATES
+  const [searchQuery, setSearchQuery] = useState('');
+  const [yearFilter, setYearFilter] = useState('all');
+  const [categoryFilter, setCategoryFilter] = useState('all');
 
   const fetchData = useCallback(async () => {
     try {
@@ -57,13 +63,52 @@ const BillsContent = () => {
     try {
       const targetCat = TAX_CATEGORIES.includes(categoryToFetch) ? categoryToFetch : TAX_CATEGORIES[0];
       const res = await axios.get(`${API_URL}/api/rate-config?category=${targetCat}`, { withCredentials: true });
-      if (res.data) setRateConfig({ ...res.data, katha_to_bigha_ratio: res.data.katha_to_bigha_ratio || 20 });
+      if (res.data) setRateConfig({
+        ...res.data,
+        katha_to_bigha_ratio: res.data.katha_to_bigha_ratio || 20
+      });
       return res.data;
     } catch (e) { return null; }
   };
 
   useEffect(() => { fetchData(); fetchRateConfig(TAX_CATEGORIES[0]); }, [fetchData]);
 
+  // --- HELPERS ---
+  const getFarmerName = (consumerId, fallbackName) => {
+    const farmer = consumers.find(c => String(c._id || c.id) === String(consumerId));
+    if (farmer && farmer.name) return farmer.name;
+    return fallbackName || 'Unknown Farmer';
+  };
+
+  const getLandText = (consumerId) => {
+    const farmer = consumers.find(c => String(c._id || c.id) === String(consumerId)) || {};
+    return `${Number(farmer.land_bigha || 0)} বিঘা, ${Number(farmer.land_katha || 0)} কাঠা`;
+  };
+
+  const getBillLandText = (bill, consumerId) => {
+    if (bill.land_bigha !== undefined && bill.land_katha !== undefined) {
+      return `${Number(bill.land_bigha)} বিঘা, ${Number(bill.land_katha)} কাঠা`;
+    }
+    return getLandText(consumerId);
+  };
+
+  // --- DYNAMIC FILTER & SEARCH DATA ---
+  const availableYears = [...new Set(bills.map(b => b.created_at ? new Date(b.created_at).getFullYear().toString() : null).filter(Boolean))].sort((a, b) => b - a);
+  const availableCategories = [...new Set(bills.map(b => b.category).filter(Boolean))].sort();
+
+  const filteredBills = bills.filter(b => {
+    const billYear = b.created_at ? new Date(b.created_at).getFullYear().toString() : null;
+    const matchYear = yearFilter === 'all' || billYear === yearFilter;
+    const matchCategory = categoryFilter === 'all' || b.category === categoryFilter;
+    
+    // Search match logic
+    const farmerName = getFarmerName(b.consumer_id, b.consumer_name).toLowerCase();
+    const matchSearch = farmerName.includes(searchQuery.toLowerCase());
+
+    return matchYear && matchCategory && matchSearch;
+  });
+
+  // --- MATH CALCULATOR ---
   const calculateAmount = (bigha, katha, rates) => {
     const b = parseFloat(bigha) || 0;
     const k = parseFloat(katha) || 0;
@@ -98,24 +143,7 @@ const BillsContent = () => {
     setFormData(newForm);
   };
 
-  const getFarmerName = (consumerId, fallbackName) => {
-    const farmer = consumers.find(c => String(c._id || c.id) === String(consumerId));
-    if (farmer && farmer.name) return farmer.name;
-    return fallbackName || 'Unknown Farmer';
-  };
-
-  const getLandText = (consumerId) => {
-    const farmer = consumers.find(c => String(c._id || c.id) === String(consumerId)) || {};
-    return `${Number(farmer.land_bigha || 0)} বিঘা, ${Number(farmer.land_katha || 0)} কাঠা`;
-  };
-
-  const getBillLandText = (bill, consumerId) => {
-    if (bill.land_bigha !== undefined && bill.land_katha !== undefined) {
-      return `${Number(bill.land_bigha)} বিঘা, ${Number(bill.land_katha)} কাঠা`;
-    }
-    return getLandText(consumerId);
-  };
-
+  // --- ACTIONS ---
   const handleRateUpdate = async (e) => {
     e.preventDefault();
     try {
@@ -147,8 +175,9 @@ const BillsContent = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!formData.consumer_id || !formData.amount) return toast.error("Check farmer and amount.");
-    if (isOthersCat && !customCatName) return toast.error("Enter custom tax name.");
+    if (!formData.consumer_id) return toast.error("Please select a farmer.");
+    if (!formData.amount || Number(formData.amount) <= 0) return toast.error("Please enter a valid amount.");
+    if (isOthersCat && !customCatName) return toast.error("Please enter the custom tax name.");
 
     try {
       const currentRatio = parseFloat(rateConfig.katha_to_bigha_ratio) || 20;
@@ -243,17 +272,18 @@ const BillsContent = () => {
     setEditDialogOpen(true);
   };
 
+  // EXPORT ONLY FILTERED BILLS
   const handleExport = (format) => {
-    if (bills.length === 0) return toast.error("No data to export");
+    if (filteredBills.length === 0) return toast.error("No data to export");
     const headers = ['Farmer', 'Category', 'Land Size', 'Total Amount', 'Paid', 'Due', 'Date', 'Notes'];
-    const rows = bills.map(b => [
+    const rows = filteredBills.map(b => [
       getFarmerName(b.consumer_id, b.consumer_name), 
       b.category ? String(b.category).toUpperCase() : '-', 
       getBillLandText(b, b.consumer_id),
       Number(b.amount || 0), Number(b.paid || 0), Number(b.due || 0),
       b.created_at ? new Date(b.created_at).toLocaleDateString() : 'N/A', b.notes || '-'
     ]);
-    format === 'csv' ? exportToCSV(rows, headers, `Bills.csv`) : exportToPDF(rows, headers, 'Water Bills Report', `Bills.pdf`);
+    format === 'csv' ? exportToCSV(rows, headers, `Bills_${yearFilter}_${categoryFilter}.csv`) : exportToPDF(rows, headers, 'Water Bills Report', `Bills.pdf`);
   };
 
   if (loading) return <div className="p-12 text-center animate-pulse">Syncing Bills...</div>;
@@ -261,9 +291,14 @@ const BillsContent = () => {
   return (
     <div className="space-y-6 p-4 max-w-7xl mx-auto">
       <div className="flex justify-between items-end border-b pb-4">
-        <div><h1 className="text-3xl font-light text-[#051039]">Bills</h1></div>
+        <div>
+          <h1 className="text-3xl font-light text-[#051039]">Bills</h1>
+          <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mt-1">
+            {filteredBills.length} records found
+          </p>
+        </div>
         <div className="flex gap-2">
-          {bills.length > 0 && (
+          {filteredBills.length > 0 && (
             <>
               <Button variant="outline" size="sm" onClick={() => handleExport('csv')}><DownloadSimple size={20} className="text-green-600"/></Button>
               <Button variant="outline" size="sm" onClick={() => handleExport('pdf')}><DownloadSimple size={20} className="text-red-600"/></Button>
@@ -307,6 +342,7 @@ const BillsContent = () => {
             <DialogContent className="rounded-[2.5rem] p-6 md:p-8 max-w-md border-none shadow-3xl max-h-[85vh] overflow-y-auto">
               <DialogHeader><DialogTitle className="text-2xl font-light text-[#051039]">Generate New Bill</DialogTitle></DialogHeader>
               <form onSubmit={handleSubmit} className="space-y-4 pt-4">
+                
                 <Select value={formData.consumer_id} onValueChange={handleFarmerSelect} required>
                   <SelectTrigger className="h-14 rounded-2xl bg-slate-50 border-none px-6 text-lg"><SelectValue placeholder="Select Farmer" /></SelectTrigger>
                   <SelectContent className="rounded-xl border-none shadow-2xl max-h-60">
@@ -340,99 +376,4 @@ const BillsContent = () => {
                 </div>
 
                 <div>
-                  <div className="flex justify-between items-end ml-2 mb-1">
-                    <Label className="text-[10px] font-bold text-slate-500 uppercase">Total Amount (₹)</Label>
-                    {!isOthersCat && formData.consumer_id && <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">Auto-Calculated</span>}
-                  </div>
-                  <Input type="number" step="0.01" value={formData.amount} onChange={(e) => setFormData({ ...formData, amount: e.target.value })} required className="h-14 rounded-2xl bg-slate-50 border-none px-6 text-lg" />
-                </div>
-                
-                <div>
-                  <Label className="text-[10px] font-bold text-slate-500 ml-2">Notes</Label>
-                  <Input value={formData.notes} onChange={(e) => setFormData({ ...formData, notes: e.target.value })} className="h-14 rounded-2xl bg-slate-50 border-none px-6 text-lg mt-1" />
-                </div>
-                <Button type="submit" className="w-full h-16 bg-[#051039] text-white rounded-2xl font-bold shadow-xl text-lg mt-2">Generate Bill</Button>
-              </form>
-            </DialogContent>
-          </Dialog>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {bills.map((bill) => {
-          const isNegative = Number(bill.due) < 0;
-          return (
-            <div key={bill._id || bill.id} className="bg-white border p-6 rounded-[2rem] shadow-sm hover:shadow-xl transition-all group relative overflow-hidden flex flex-col justify-between">
-              <div>
-                <div className="flex justify-between items-start">
-                  <div className="flex-1">
-                    <span className="text-[10px] bg-purple-50 text-purple-700 px-3 py-1 rounded-full uppercase font-black border border-purple-100">{bill.category ? String(bill.category).toUpperCase() : 'WATER TAX'}</span>
-                    <h3 className="text-xl font-bold text-slate-800 mt-3 leading-tight truncate pr-2">{getFarmerName(bill.consumer_id, bill.consumer_name)}</h3>
-                    <p className="text-xs font-bold text-slate-400 mt-0.5 flex items-center gap-1"><Calendar size={14} weight="fill"/> {bill.created_at ? new Date(bill.created_at).toLocaleDateString() : 'Unknown'}</p>
-                  </div>
-                  <div className="flex flex-col gap-1 opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity bg-white pl-2">
-                    <Button type="button" variant="ghost" size="sm" onClick={() => sendWhatsApp(bill)} className="text-emerald-500 rounded-full h-8 w-8 p-0"><WhatsappLogo size={22} weight="fill"/></Button>
-                    <Button type="button" variant="ghost" size="sm" onClick={() => handleSendSMS(bill)} className="text-blue-500 rounded-full h-8 w-8 p-0"><ChatCircleDots size={22} weight="fill"/></Button>
-                    <Button type="button" variant="ghost" size="sm" onClick={() => openEditDialog(bill)} className="text-slate-400 rounded-full h-8 w-8 p-0"><Pencil size={20}/></Button>
-                    <Button type="button" variant="ghost" size="sm" onClick={() => handleDelete(bill._id || bill.id)} className="text-rose-400 rounded-full h-8 w-8 p-0"><Trash size={20}/></Button>
-                  </div>
-                </div>
-                
-                <div className="mt-4 grid grid-cols-2 gap-2 border-t border-slate-50 pt-4">
-                  <div>
-                    <p className="text-[10px] font-bold text-slate-400 uppercase">Land Size</p>
-                    <p className="text-sm font-medium text-slate-600">{getBillLandText(bill, bill.consumer_id)}</p>
-                  </div>
-                  <div>
-                    <p className="text-[10px] font-bold text-slate-400 uppercase">Notes</p>
-                    <p className="text-sm font-medium text-slate-600 truncate">{bill.notes || '-'}</p>
-                  </div>
-                </div>
-              </div>
-              
-              <div className="mt-6 pt-4 border-t border-slate-50 grid grid-cols-2 gap-2">
-                <div><p className="text-[10px] font-bold text-slate-300 uppercase">Total Billed</p><p className="text-lg font-bold text-slate-700">₹{Number(bill.amount || 0).toFixed(0)}</p></div>
-                
-                {/* FIX: Displays Green 'Advance' if due is negative! */}
-                <div className={`text-right p-2 rounded-xl border ${isNegative ? 'bg-emerald-50 border-emerald-100' : 'bg-rose-50 border-rose-100'}`}>
-                  <p className={`text-[10px] font-bold uppercase ${isNegative ? 'text-emerald-500' : 'text-rose-400'}`}>
-                    {isNegative ? 'Advance Paid' : 'Pending Due'}
-                  </p>
-                  <p className={`text-lg font-black ${isNegative ? 'text-emerald-600' : 'text-rose-600'}`}>
-                    ₹{Math.abs(Number(bill.due || 0)).toFixed(0)}
-                  </p>
-                </div>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
-        <DialogContent className="rounded-[2.5rem] p-6 md:p-8 max-w-md border-none shadow-3xl max-h-[85vh] overflow-y-auto">
-          <DialogHeader><DialogTitle className="text-2xl font-light text-[#051039]">Edit Bill</DialogTitle></DialogHeader>
-          <form onSubmit={handleEdit} className="space-y-4 pt-4">
-            <div><Label className="text-[10px] font-bold text-slate-500 ml-2">Farmer</Label><div className="h-14 rounded-2xl bg-slate-50 px-6 text-lg flex items-center font-bold text-slate-700 mt-1">{getFarmerName(editingBill?.consumer_id, editingBill?.consumer_name)}</div></div>
-            <Select value={formData.category} onValueChange={handleCategorySelect}>
-              <SelectTrigger className="h-14 rounded-2xl bg-slate-50 border-none px-6 text-lg mt-2"><SelectValue /></SelectTrigger>
-              <SelectContent className="rounded-xl border-none shadow-2xl">{TAX_CATEGORIES.map((cat) => <SelectItem key={cat} value={cat}>{cat.toUpperCase()}</SelectItem>)}</SelectContent>
-            </Select>
-            {isOthersCat && <div className="animate-in fade-in slide-in-from-top-4 duration-300"><Label className="text-[10px] font-bold text-emerald-600 ml-2">Enter Tax Name</Label><Input value={customCatName} onChange={(e) => setCustomCatName(e.target.value)} className="h-14 rounded-2xl bg-emerald-50 border-emerald-100 px-6 text-lg mt-1" required /></div>}
-            
-            <div className="grid grid-cols-2 gap-4">
-              <div><Label className="text-[10px] font-bold text-slate-500 ml-2">Land (Bigha)</Label><Input type="number" step="0.01" value={formData.land_bigha} onChange={(e) => handleLandChange('land_bigha', e.target.value)} className="h-14 rounded-2xl bg-slate-50 border-none px-6 text-lg mt-1" /></div>
-              <div><Label className="text-[10px] font-bold text-slate-500 ml-2">Land (Katha)</Label><Input type="number" step="0.01" value={formData.land_katha} onChange={(e) => handleLandChange('land_katha', e.target.value)} className="h-14 rounded-2xl bg-slate-50 border-none px-6 text-lg mt-1" /></div>
-            </div>
-
-            <div><Label className="text-[10px] font-bold text-slate-500 ml-2">Total Amount (₹)</Label><Input type="number" step="0.01" value={formData.amount} onChange={(e) => setFormData({ ...formData, amount: e.target.value })} required className="h-14 rounded-2xl bg-slate-50 border-none px-6 text-lg mt-1" /></div>
-            <div><Label className="text-[10px] font-bold text-slate-500 ml-2">Notes</Label><Input value={formData.notes} onChange={(e) => setFormData({ ...formData, notes: e.target.value })} className="h-14 rounded-2xl bg-slate-50 border-none px-6 text-lg mt-1" /></div>
-            <Button type="submit" className="w-full h-16 bg-[#051039] text-white rounded-2xl font-bold shadow-xl text-lg mt-2">Update Bill</Button>
-          </form>
-        </DialogContent>
-      </Dialog>
-    </div>
-  );
-};
-
-const Bills = () => <ErrorBoundary><BillsContent /></ErrorBoundary>;
-export default Bills;
+                  <div className="
